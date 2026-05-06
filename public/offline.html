@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Coach App — Offline</title>
+  <style>
+    body { margin: 0; background: #0f172a; color: #94a3b8; font-family: system-ui, sans-serif;
+           display: flex; flex-direction: column; align-items: center; justify-content: center;
+           min-height: 100dvh; gap: 12px; text-align: center; padding: 24px; box-sizing: border-box; }
+    h1 { color: #f1f5f9; font-size: 1.25rem; margin: 0; }
+    p  { font-size: 0.875rem; margin: 0; }
+    button { margin-top: 8px; padding: 12px 28px; background: #1D9E75; color: #fff;
+             border: none; border-radius: 12px; font-size: 0.95rem; font-weight: 600; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div style="font-size:3rem">📶</div>
+  <h1>Sei offline</h1>
+  <p>Controlla la connessione e riprova.</p>
+  <button onclick="location.reload()">Riprova</button>
+</body>
+</html>

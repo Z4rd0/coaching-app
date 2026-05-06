@@ -1,0 +1,98 @@
+{
+  "name": "Nome del programma",
+  "sport": "Es. Powerlifting / Running / Crossfit",
+  "cycles": [
+    {
+      "cycleNumber": 1,
+      "weeks": [
+        {
+          "weekNumber": 1,
+          "sessions": [
+            {
+              "dayOfWeek": 0,
+              "type": "strength",
+              "title": "Nome sessione (es. Squat + Upper)",
+              "targetRPE": 7,
+              "durationMin": 60,
+              "notes": "Note opzionali sulla sessione",
+              "exercises": [
+                {
+                  "name": "Back Squat",
+                  "sets": 4,
+                  "reps": "5",
+                  "load": "75% 1RM",
+                  "notes": ""
+                },
+                {
+                  "name": "Panca Piana",
+                  "sets": 3,
+                  "reps": "8",
+                  "load": "70 kg",
+                  "notes": ""
+                }
+              ]
+            },
+            {
+              "dayOfWeek": 2,
+              "type": "cardio",
+              "title": "Corsa facile",
+              "targetRPE": 5,
+              "durationMin": 40,
+              "notes": "",
+              "exercises": []
+            }
+          ]
+        },
+        {
+          "weekNumber": 2,
+          "sessions": [
+            {
+              "dayOfWeek": 0,
+              "type": "strength",
+              "title": "Squat + Upper (progressione)",
+              "targetRPE": 7,
+              "durationMin": 60,
+              "notes": "",
+              "exercises": [
+                {
+                  "name": "Back Squat",
+                  "sets": 4,
+                  "reps": "5",
+                  "load": "77.5% 1RM",
+                  "notes": "Progressione +2.5%"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "cycleNumber": 2,
+      "weeks": [
+        {
+          "weekNumber": 1,
+          "sessions": [
+            {
+              "dayOfWeek": 0,
+              "type": "strength",
+              "title": "Intensificazione",
+              "targetRPE": 8,
+              "durationMin": 75,
+              "notes": "Fase di picco",
+              "exercises": [
+                {
+                  "name": "Back Squat",
+                  "sets": 5,
+                  "reps": "3",
+                  "load": "82.5% 1RM",
+                  "notes": ""
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

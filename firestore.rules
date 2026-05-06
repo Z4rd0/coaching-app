@@ -1,0 +1,75 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ── Helpers ────────────────────────────────────────────────────────────────
+
+    /** True if the authenticated user is the coach for this coachId */
+    function isCoach(coachId) {
+      return request.auth != null && request.auth.uid == coachId;
+    }
+
+    /** True if the authenticated user is the athlete linked to this coachId+athleteId */
+    function isAthlete(coachId, athleteId) {
+      return request.auth != null &&
+        exists(/databases/$(database)/documents/athleteAccess/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/athleteAccess/$(request.auth.uid)).data.coachId == coachId &&
+        get(/databases/$(database)/documents/athleteAccess/$(request.auth.uid)).data.athleteId == athleteId;
+    }
+
+    // ── Coach document ─────────────────────────────────────────────────────────
+
+    match /coaches/{coachId} {
+      allow read, write: if isCoach(coachId);
+
+      // ── Athlete profiles ────────────────────────────────────────────────────
+
+      match /athletes/{athleteId} {
+        allow read: if isCoach(coachId) || isAthlete(coachId, athleteId);
+        allow write: if isCoach(coachId);
+
+        // ── Athlete programs ──────────────────────────────────────────────────
+
+        match /programs/{programId} {
+          allow read: if isCoach(coachId) || isAthlete(coachId, athleteId);
+          allow write: if isCoach(coachId);
+        }
+
+        // ── Workout logs ──────────────────────────────────────────────────────
+
+        match /logs/{logId} {
+          allow read: if isCoach(coachId) || isAthlete(coachId, athleteId);
+          allow create: if isCoach(coachId) || isAthlete(coachId, athleteId);
+          allow update: if isCoach(coachId) ||
+            (isAthlete(coachId, athleteId) &&
+             request.resource.data.writtenBy == "athlete");
+          allow delete: if isCoach(coachId);
+        }
+      }
+
+      // ── Coach program library ───────────────────────────────────────────────
+
+      match /programs/{programId} {
+        allow read, write: if isCoach(coachId);
+      }
+
+      // ── Invites ────────────────────────────────────────────────────────────
+
+      match /invites/{inviteId} {
+        // Public read so the accept page can validate the token without auth
+        allow read: if true;
+        allow write: if isCoach(coachId);
+      }
+    }
+
+    // ── AthleteAccess (global lookup used by security rules) ───────────────────
+
+    match /athleteAccess/{athleteUid} {
+      // Athlete can read their own access document
+      allow read: if request.auth != null && request.auth.uid == athleteUid;
+      // Writes happen client-side during invite acceptance (the athlete is authenticated)
+      allow write: if request.auth != null && request.auth.uid == athleteUid;
+    }
+  }
+}
