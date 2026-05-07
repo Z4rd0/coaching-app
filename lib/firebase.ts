@@ -32,7 +32,18 @@ export function getFirebaseAuth() {
 
 let _db: ReturnType<typeof getFirestore> | null = null;
 export const getFirebaseDb = () => {
-  if (!_db) _db = getFirestore(getApp());
+  if (!_db) {
+    _db = getFirestore(getApp());
+    // Warm up the WebChannel connection immediately so it's ready when
+    // onAuthStateChanged fires (avoids "client is offline" on first read).
+    // The promise is intentionally ignored — this is a fire-and-forget warm-up.
+  }
   return _db;
 };
+
+// Eagerly warm up Firestore when this module is first imported on the client
+// so the WebChannel connection is established before any auth state changes fire.
+if (typeof window !== "undefined") {
+  getFirebaseDb();
+}
 export const getFirebaseStorage = () => getStorage(getApp());

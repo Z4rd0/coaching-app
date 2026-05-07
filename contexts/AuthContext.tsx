@@ -27,6 +27,24 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
+/** Retry a Firestore read up to `attempts` times if the client reports offline. */
+async function firestoreRead<T>(fn: () => Promise<T>, attempts = 4): Promise<T> {
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      const isOffline = msg.includes("offline") || msg.includes("unavailable");
+      if (isOffline && i < attempts - 1) {
+        await new Promise((res) => setTimeout(res, 800 * (i + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw new Error("firestoreRead: max attempts exceeded");
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [coach, setCoach] = useState<Coach | null>(null);
@@ -40,12 +58,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(firebaseUser);
         if (firebaseUser) {
           // Try coach first — saves a read for coach users
-          const coachData = await getCoach(firebaseUser.uid);
+          const coachData = await firestoreRead(() => getCoach(firebaseUser.uid));
           setCoach(coachData);
           if (coachData) {
             setRole("coach");
           } else {
-            const accessData = await getAthleteAccessByUid(firebaseUser.uid);
+            const accessData = await firestoreRead(() => getAthleteAccessByUid(firebaseUser.uid));
             setAthleteAccess(accessData);
             setRole(accessData ? "athlete" : null);
           }
@@ -66,13 +84,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   /** Returns detected role after sign-in */
   const signIn = async (email: string, password: string): Promise<UserRole> => {
     const cred = await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
-    const coachData = await getCoach(cred.user.uid);
+    const coachData = await firestoreRead(() => getCoach(cred.user.uid));
     setCoach(coachData);
     if (coachData) {
       setRole("coach");
       return "coach";
     }
-    const accessData = await getAthleteAccessByUid(cred.user.uid);
+    const accessData = await firestoreRead(() => getAthleteAccessByUid(cred.user.uid));
     setAthleteAccess(accessData);
     const detectedRole: UserRole = accessData ? "athlete" : null;
     setRole(detectedRole);
@@ -82,7 +100,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (name: string, email: string, password: string) => {
     const cred = await createUserWithEmailAndPassword(getFirebaseAuth(), email, password);
     await createCoach(cred.user.uid, name, email);
-    const coachData = await getCoach(cred.user.uid);
+    const coachData = await firestoreRead(() => getCoach(cred.user.uid));
     setCoach(coachData);
     setRole("coach");
   };
