@@ -33,7 +33,7 @@ export default function AthletesPage() {
   }, [user]);
 
   const active = athletes.filter((a) => a.status === "active");
-  const invited = athletes.filter((a) => a.status === "invited");
+  const pending = athletes.filter((a) => a.status === "pending" || a.status === "invited");
   const archived = athletes.filter((a) => a.status === "archived");
 
   if (loading) return <LoadingSpinner className="min-h-screen" />;
@@ -71,8 +71,8 @@ export default function AthletesPage() {
           {active.length > 0 && (
             <Section title="Attivi" athletes={active} />
           )}
-          {invited.length > 0 && (
-            <Section title="In attesa" athletes={invited} />
+          {pending.length > 0 && (
+            <Section title="In attesa" athletes={pending} />
           )}
           {archived.length > 0 && (
             <Section title="Archiviati" athletes={archived} />

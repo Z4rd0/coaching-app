@@ -98,10 +98,14 @@ export default function AthleteDetailPage() {
       <div className="flex gap-2 items-center">
         <span className={`text-xs font-medium px-2.5 py-1 rounded-full ${
           athlete.status === "active" ? "bg-primary/20 text-primary" :
+          athlete.status === "pending" ? "bg-blue-500/20 text-blue-400" :
           athlete.status === "invited" ? "bg-yellow-500/20 text-yellow-400" :
           "bg-slate-700 text-slate-400"
         }`}>
-          {athlete.status === "active" ? "Attivo" : athlete.status === "invited" ? "Invitato — in attesa" : "Archiviato"}
+          {athlete.status === "active" ? "Attivo" :
+           athlete.status === "pending" ? "Link inviato — in attesa" :
+           athlete.status === "invited" ? "Invitato — in attesa" :
+           "Archiviato"}
         </span>
         {athlete.sport && (
           <span className="text-xs text-slate-500">{athlete.sport}</span>
