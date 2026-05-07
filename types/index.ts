@@ -21,7 +21,7 @@ export interface Athlete {
   notes: string;
   /** Firebase Auth UID of the athlete — set after they accept the invite */
   athleteUid?: string;
-  status: "invited" | "active" | "archived";
+  status: "pending" | "invited" | "active" | "archived";
   garminConnected: boolean;
   createdAt: Timestamp;
 }

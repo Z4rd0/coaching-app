@@ -1,6 +1,6 @@
 import { initializeApp, getApps } from "firebase/app";
 import { getAuth, browserLocalPersistence, setPersistence } from "firebase/auth";
-import { initializeFirestore, getFirestore } from "firebase/firestore";
+import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 function getApp() {
@@ -31,15 +31,8 @@ export function getFirebaseAuth() {
 }
 
 let _db: ReturnType<typeof getFirestore> | null = null;
-
-export function getFirebaseDb() {
-  if (_db) return _db;
-  const app = getApp();
-  try {
-    _db = initializeFirestore(app, { ignoreUndefinedProperties: true });
-  } catch {
-    _db = getFirestore(app);
-  }
+export const getFirebaseDb = () => {
+  if (!_db) _db = getFirestore(getApp());
   return _db;
-}
+};
 export const getFirebaseStorage = () => getStorage(getApp());

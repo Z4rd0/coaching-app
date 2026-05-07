@@ -1,15 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import {
-  getDoc,
-  doc,
-  Timestamp,
-} from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase";
-import {
-  getAthlete,
-  activateAthlete,
-  updateInviteStatus,
-} from "@/lib/firestore";
+  adminGetInvite,
+  adminGetAthlete,
+  adminActivateAthlete,
+  adminUpdateInviteStatus,
+} from "@/lib/firestore-admin";
 
 export async function POST(req: NextRequest) {
   try {
@@ -20,33 +15,26 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Fetch and validate the invite
-    const db = getFirebaseDb();
-    const inviteSnap = await getDoc(doc(db, "coaches", coachId, "invites", token));
-
-    if (!inviteSnap.exists()) {
+    const invite = await adminGetInvite(coachId, token);
+    if (!invite) {
       return NextResponse.json({ error: "Invito non trovato" }, { status: 404 });
     }
-
-    const invite = inviteSnap.data();
-
     if (invite.status !== "pending") {
       return NextResponse.json({ error: "Invito già usato o scaduto" }, { status: 400 });
     }
-
-    const now = Timestamp.now();
-    if (invite.expiresAt.toMillis() < now.toMillis()) {
-      await updateInviteStatus(coachId, token, "expired");
+    if (invite.expiresAt.toMillis() < Date.now()) {
+      await adminUpdateInviteStatus(coachId, token, "expired");
       return NextResponse.json({ error: "Invito scaduto" }, { status: 400 });
     }
 
     // 2. Get athlete profile
-    const athlete = await getAthlete(coachId, invite.athleteId);
+    const athlete = await adminGetAthlete(coachId, invite.athleteId);
     if (!athlete) {
       return NextResponse.json({ error: "Profilo atleta non trovato" }, { status: 404 });
     }
 
-    // 3. Link athlete UID + create athleteAccess
-    await activateAthlete(
+    // 3. Link athlete UID + create athleteAccess doc
+    await adminActivateAthlete(
       coachId,
       invite.athleteId,
       athleteUid,
@@ -55,7 +43,7 @@ export async function POST(req: NextRequest) {
     );
 
     // 4. Mark invite as accepted
-    await updateInviteStatus(coachId, token, "accepted");
+    await adminUpdateInviteStatus(coachId, token, "accepted");
 
     return NextResponse.json({
       success: true,

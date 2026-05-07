@@ -39,15 +39,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         setUser(firebaseUser);
         if (firebaseUser) {
-          const [coachData, accessData] = await Promise.all([
-            getCoach(firebaseUser.uid),
-            getAthleteAccessByUid(firebaseUser.uid),
-          ]);
+          // Try coach first — saves a read for coach users
+          const coachData = await getCoach(firebaseUser.uid);
           setCoach(coachData);
-          setAthleteAccess(accessData);
-          if (coachData) setRole("coach");
-          else if (accessData) setRole("athlete");
-          else setRole(null);
+          if (coachData) {
+            setRole("coach");
+          } else {
+            const accessData = await getAthleteAccessByUid(firebaseUser.uid);
+            setAthleteAccess(accessData);
+            setRole(accessData ? "athlete" : null);
+          }
         } else {
           setCoach(null);
           setAthleteAccess(null);
@@ -65,15 +66,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   /** Returns detected role after sign-in */
   const signIn = async (email: string, password: string): Promise<UserRole> => {
     const cred = await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
-    const [coachData, accessData] = await Promise.all([
-      getCoach(cred.user.uid),
-      getAthleteAccessByUid(cred.user.uid),
-    ]);
+    const coachData = await getCoach(cred.user.uid);
     setCoach(coachData);
+    if (coachData) {
+      setRole("coach");
+      return "coach";
+    }
+    const accessData = await getAthleteAccessByUid(cred.user.uid);
     setAthleteAccess(accessData);
-    let detectedRole: UserRole = null;
-    if (coachData) detectedRole = "coach";
-    else if (accessData) detectedRole = "athlete";
+    const detectedRole: UserRole = accessData ? "athlete" : null;
     setRole(detectedRole);
     return detectedRole;
   };

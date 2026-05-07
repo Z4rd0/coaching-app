@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
-import { createAthlete, createInvite, getCoach } from "@/lib/firestore";
+import { adminGetCoach, adminCreateAthlete, adminCreateInvite } from "@/lib/firestore-admin";
 
 export async function POST(req: NextRequest) {
-  // Lazy init to avoid build-time crash when env vars are not set
   const resend = new Resend(process.env.RESEND_API_KEY);
   const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "http://localhost:3000";
 
@@ -15,13 +14,13 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. Get coach info for the email
-    const coach = await getCoach(coachId);
+    const coach = await adminGetCoach(coachId);
     if (!coach) {
       return NextResponse.json({ error: "Coach non trovato" }, { status: 404 });
     }
 
     // 2. Create athlete profile (status: "invited")
-    const athleteRef = await createAthlete(coachId, {
+    const athleteId = await adminCreateAthlete(coachId, {
       name,
       email,
       sport: sport ?? "",
@@ -30,23 +29,21 @@ export async function POST(req: NextRequest) {
       status: "invited",
       garminConnected: false,
     });
-    const athleteId = athleteRef.id;
 
-    // 3. Create invite record
-    const { ref: inviteRef } = await createInvite(coachId, {
+    // 3. Create invite record — the document ID is used as the token
+    const inviteId = await adminCreateInvite(coachId, {
       athleteId,
       email,
       coachId,
       coachName: coach.name,
       status: "pending",
     });
-    const token = inviteRef.id; // use doc ID as token (Firestore generates a random 20-char ID)
 
     // 4. Send email via Resend
-    const acceptUrl = `${APP_URL}/invite/accept?token=${token}&coach=${coachId}`;
+    const acceptUrl = `${APP_URL}/invite/accept?token=${inviteId}&coach=${coachId}`;
 
     await resend.emails.send({
-      from: process.env.RESEND_FROM_EMAIL ?? "noreply@coachapp.it",
+      from: process.env.RESEND_FROM_EMAIL ?? "onboarding@resend.dev",
       to: email,
       subject: `${coach.name} ti ha invitato su Coach App`,
       html: `
@@ -79,7 +76,7 @@ export async function POST(req: NextRequest) {
       `,
     });
 
-    return NextResponse.json({ success: true, athleteId, inviteId: inviteRef.id });
+    return NextResponse.json({ success: true, athleteId, inviteId });
   } catch (err) {
     console.error("invite/send error:", err);
     return NextResponse.json({ error: "Errore interno" }, { status: 500 });

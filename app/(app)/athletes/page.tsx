@@ -8,11 +8,13 @@ import type { Athlete } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
 const STATUS_COLOR: Record<Athlete["status"], string> = {
+  pending: "bg-blue-500/20 text-blue-400",
   active: "bg-primary/20 text-primary",
   invited: "bg-yellow-500/20 text-yellow-400",
   archived: "bg-slate-700 text-slate-400",
 };
 const STATUS_LABEL: Record<Athlete["status"], string> = {
+  pending: "In attesa",
   active: "Attivo",
   invited: "Invitato",
   archived: "Archiviato",

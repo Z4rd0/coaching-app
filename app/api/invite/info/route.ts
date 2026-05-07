@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getDoc, doc } from "firebase/firestore";
-import { getFirebaseDb } from "@/lib/firebase";
+import { adminGetInvite } from "@/lib/firestore-admin";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -12,12 +11,10 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const db = getFirebaseDb();
-    const inviteSnap = await getDoc(doc(db, "coaches", coachId, "invites", token));
-    if (!inviteSnap.exists()) {
+    const invite = await adminGetInvite(coachId, token);
+    if (!invite) {
       return NextResponse.json({ error: "Non trovato" }, { status: 404 });
     }
-    const invite = inviteSnap.data();
     return NextResponse.json({
       coachName: invite.coachName ?? "",
       email: invite.email ?? "",
