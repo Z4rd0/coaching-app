@@ -6,7 +6,7 @@ import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
 } from "firebase/auth";
-import { doc, getDoc, updateDoc, setDoc } from "firebase/firestore";
+import { doc, updateDoc, setDoc } from "firebase/firestore";
 import { getFirebaseAuth, getFirebaseDb } from "@/lib/firebase";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
@@ -40,21 +40,18 @@ function JoinContent() {
   useEffect(() => {
     if (!coachId || !athleteId) { setStep("error"); return; }
 
-    // Load coach name and athlete name from Firestore (public-ish read via rules)
-    const db = getFirebaseDb();
-    Promise.all([
-      getDoc(doc(db, "coaches", coachId)),
-      getDoc(doc(db, "coaches", coachId, "athletes", athleteId)),
-    ]).then(([coachSnap, athleteSnap]) => {
-      if (!coachSnap.exists() || !athleteSnap.exists()) { setStep("error"); return; }
-      const athlete = athleteSnap.data();
-      if (athlete.status !== "pending") { setStep("error"); return; }
-      setCoachName(coachSnap.data().name ?? "");
-      setAthleteName(athlete.name ?? "");
-      setEmail(athlete.email ?? "");
-      setName(athlete.name ?? "");
-      setStep("form");
-    }).catch(() => setStep("error"));
+    // Load join info via API route (uses Admin SDK — no client auth needed)
+    fetch(`/api/join?coachId=${coachId}&athleteId=${athleteId}`)
+      .then(async (res) => {
+        if (!res.ok) { setStep("error"); return; }
+        const data = await res.json();
+        setCoachName(data.coachName ?? "");
+        setAthleteName(data.athleteName ?? "");
+        setEmail(data.athleteEmail ?? "");
+        setName(data.athleteName ?? "");
+        setStep("form");
+      })
+      .catch(() => setStep("error"));
   }, [coachId, athleteId]);
 
   const handleSubmit = async (e: React.FormEvent) => {
