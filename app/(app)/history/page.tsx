@@ -8,8 +8,8 @@ import {
   LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
 } from "recharts";
 import { useAuth } from "@/contexts/AuthContext";
-import { getLogs } from "@/lib/firestore";
-import type { WorkoutLog } from "@/types";
+import { getLogs, getPrograms } from "@/lib/firestore";
+import type { WorkoutLog, Program } from "@/types";
 import { SESSION_TYPE_LABELS, MOOD_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
@@ -18,13 +18,20 @@ type FilterType = "all" | "strength" | "cardio" | "mobility" | "other";
 export default function HistoryPage() {
   const { user } = useAuth();
   const [logs, setLogs] = useState<WorkoutLog[]>([]);
+  const [programMap, setProgramMap] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<FilterType>("all");
 
   useEffect(() => {
     if (!user) return;
-    getLogs(user.uid, user.uid, 50).then((data) => {
-      setLogs(data);
+    Promise.all([
+      getLogs(user.uid, user.uid, 50),
+      getPrograms(user.uid),
+    ]).then(([logData, programs]: [WorkoutLog[], Program[]]) => {
+      setLogs(logData);
+      const map: Record<string, string> = {};
+      for (const p of programs) map[p.id] = p.name;
+      setProgramMap(map);
       setLoading(false);
     });
   }, [user]);
@@ -168,6 +175,11 @@ export default function HistoryPage() {
                   <p className="text-sm font-medium text-white truncate">
                     {log.plannedSession?.title || "Sessione libera"}
                   </p>
+                  {log.programId && programMap[log.programId] && (
+                    <p className="text-xs text-primary truncate">
+                      {programMap[log.programId]}
+                    </p>
+                  )}
                   <p className="text-xs text-slate-400">
                     {format(log.date.toDate(), "EEE d MMM", { locale: it })} ·{" "}
                     {log.actualDurationMin} min · RPE {log.perceivedRPE}

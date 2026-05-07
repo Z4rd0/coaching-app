@@ -22,12 +22,27 @@ service cloud.firestore {
     match /coaches/{coachId} {
       allow read, write: if isCoach(coachId);
 
+      // Coach library: programs (templates)
+      match /programs/{programId} {
+        allow read, write: if isCoach(coachId);
+      }
+
+      // Coach library: invites (legacy, may not be used)
+      match /invites/{inviteId} {
+        allow read, write: if isCoach(coachId);
+      }
+
+      // Catch-all for any other coach-owned subcollections
+      match /{anyCollection}/{anyDoc} {
+        allow read, write: if isCoach(coachId);
+      }
+
       // ── Athletes subcollection ───────────────────────────────────────────────
       match /athletes/{athleteId} {
         allow read, write: if isCoach(coachId);
         // Athlete can read their own profile
         allow read: if isAthlete(coachId, athleteId);
-        // Self-activation: athlete with valid auth can activate themselves
+        // Self-activation: pending athlete with auth flips status to active
         allow update: if request.auth != null
           && resource.data.status == "pending"
           && request.resource.data.status == "active"
@@ -35,25 +50,30 @@ service cloud.firestore {
           && request.resource.data.diff(resource.data).affectedKeys()
                .hasOnly(["athleteUid", "status"]);
 
-        // ── Athlete programs ─────────────────────────────────────────────────
+        // Athlete programs
         match /programs/{programId} {
           allow read, write: if isCoach(coachId);
           allow read: if isAthlete(coachId, athleteId);
         }
 
-        // ── Workout logs ─────────────────────────────────────────────────────
+        // Workout logs (shared between coach and athlete)
         match /logs/{logId} {
           allow read, write: if isCoach(coachId);
           allow read, write: if isAthlete(coachId, athleteId);
+        }
+
+        // Catch-all for any other athlete-owned subcollections
+        match /{anyCollection}/{anyDoc} {
+          allow read, write: if isCoach(coachId);
+          allow read: if isAthlete(coachId, athleteId);
         }
       }
     }
 
     // ── AthleteAccess lookup ───────────────────────────────────────────────────
     match /athleteAccess/{uid} {
-      // Athlete can read/write their own access doc (created on join)
       allow read, write: if request.auth != null && request.auth.uid == uid;
-      // Coach can read their athletes' access docs (for admin lookups)
+      // Coaches can read athleteAccess to map athletes back to UIDs
       allow read: if request.auth != null;
     }
   }

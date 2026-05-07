@@ -115,6 +115,13 @@ export async function updateAthlete(
   await updateDoc(athleteRef(coachId, athleteId), data);
 }
 
+export async function deleteAthlete(
+  coachId: string,
+  athleteId: string
+): Promise<void> {
+  await deleteDoc(athleteRef(coachId, athleteId));
+}
+
 /** Link Firebase Auth UID to athlete and create the global access document */
 export async function activateAthlete(
   coachId: string,
