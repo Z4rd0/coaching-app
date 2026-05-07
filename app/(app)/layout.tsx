@@ -7,14 +7,17 @@ import BottomNav from "@/components/BottomNav";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, role, loading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!loading && !user) {
+    if (loading) return;
+    if (!user) {
       router.replace("/auth");
+    } else if (role === "athlete") {
+      router.replace("/athlete/dashboard");
     }
-  }, [user, loading, router]);
+  }, [user, role, loading, router]);
 
   if (loading) {
     return (
@@ -24,7 +27,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!user) return null;
+  if (!user || role === "athlete") return null;
 
   return (
     <div className="min-h-screen bg-slate-900">
