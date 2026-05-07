@@ -161,8 +161,10 @@ export default function LogPage() {
       });
 
       router.push(`/log/feedback/${docRef.id}`);
-    } catch {
-      setError("Errore nel salvataggio. Riprova.");
+    } catch (err: unknown) {
+      console.error("createLog error:", err);
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(`Errore nel salvataggio: ${msg}`);
       setSaving(false);
     }
   };

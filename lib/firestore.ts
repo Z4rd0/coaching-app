@@ -28,6 +28,32 @@ import type {
 
 const db = () => getFirebaseDb();
 
+/**
+ * Recursively strip `undefined` values from objects/arrays before writing
+ * to Firestore — Firestore rejects documents containing `undefined` and
+ * the resulting error message is opaque ("Function ... called with invalid data").
+ * Preserves Timestamp instances, DocumentReference, Date, and other class
+ * instances by only walking plain objects and arrays.
+ */
+function stripUndefined<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value
+      .filter((v) => v !== undefined)
+      .map((v) => stripUndefined(v)) as unknown as T;
+  }
+  if (value !== null && typeof value === "object") {
+    // Preserve class instances (Timestamp, DocumentReference, Date, etc.)
+    const proto = Object.getPrototypeOf(value);
+    if (proto !== Object.prototype && proto !== null) return value;
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      if (v !== undefined) out[k] = stripUndefined(v);
+    }
+    return out as T;
+  }
+  return value;
+}
+
 // ─── Paths ────────────────────────────────────────────────────────────────────
 
 export const coachRef = (coachId: string) =>
@@ -101,10 +127,10 @@ export async function createAthlete(
   coachId: string,
   data: Omit<Athlete, "id" | "createdAt">
 ): Promise<DocumentReference> {
-  return addDoc(athletesRef(coachId), {
+  return addDoc(athletesRef(coachId), stripUndefined({
     ...data,
     createdAt: Timestamp.now(),
-  });
+  }));
 }
 
 export async function updateAthlete(
@@ -112,7 +138,7 @@ export async function updateAthlete(
   athleteId: string,
   data: Partial<Omit<Athlete, "id" | "createdAt">>
 ): Promise<void> {
-  await updateDoc(athleteRef(coachId, athleteId), data);
+  await updateDoc(athleteRef(coachId, athleteId), stripUndefined(data));
 }
 
 export async function deleteAthlete(
@@ -208,10 +234,10 @@ export async function createAthleteProgram(
   athleteId: string,
   data: Omit<AthleteProgram, "id" | "createdAt">
 ): Promise<DocumentReference> {
-  return addDoc(athleteProgramsRef(coachId, athleteId), {
+  return addDoc(athleteProgramsRef(coachId, athleteId), stripUndefined({
     ...data,
     createdAt: Timestamp.now(),
-  });
+  }));
 }
 
 export async function updateAthleteProgram(
@@ -220,7 +246,7 @@ export async function updateAthleteProgram(
   programId: string,
   data: Partial<Omit<AthleteProgram, "id" | "createdAt">>
 ): Promise<void> {
-  await updateDoc(athleteProgramRef(coachId, athleteId, programId), data);
+  await updateDoc(athleteProgramRef(coachId, athleteId, programId), stripUndefined(data));
 }
 
 export async function deleteAthleteProgram(
@@ -288,7 +314,7 @@ export async function createProgram(
   coachId: string,
   data: Omit<Program, "id" | "createdAt">
 ): Promise<DocumentReference> {
-  return addDoc(programsRef(coachId), { ...data, createdAt: Timestamp.now() });
+  return addDoc(programsRef(coachId), stripUndefined({ ...data, createdAt: Timestamp.now() }));
 }
 
 export async function updateProgram(
@@ -296,7 +322,7 @@ export async function updateProgram(
   programId: string,
   data: Partial<Omit<Program, "id" | "createdAt">>
 ): Promise<void> {
-  await updateDoc(programRef(coachId, programId), data);
+  await updateDoc(programRef(coachId, programId), stripUndefined(data));
 }
 
 export async function deleteProgram(coachId: string, programId: string): Promise<void> {
@@ -348,10 +374,10 @@ export async function createLog(
   athleteId: string,
   data: Omit<WorkoutLog, "id" | "createdAt">
 ): Promise<DocumentReference> {
-  return addDoc(logsRef(coachId, athleteId), {
+  return addDoc(logsRef(coachId, athleteId), stripUndefined({
     ...data,
     createdAt: Timestamp.now(),
-  });
+  }));
 }
 
 export async function updateLogAI(
