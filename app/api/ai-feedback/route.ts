@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
-import { getLogs, updateLogAI } from "@/lib/firestore";
+import { adminGetLogs, adminUpdateLogAI } from "@/lib/firestore-admin";
 import type { Session, WorkoutLog, AIAnalysis } from "@/types";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -18,8 +18,8 @@ export async function POST(req: NextRequest) {
     const body: RequestBody = await req.json();
     const { coachId, athleteId, logId, plannedSession, logData } = body;
 
-    // Fetch last 5 logs for context
-    const recentLogs = await getLogs(coachId, athleteId, 6);
+    // Fetch last 5 logs for context (Admin SDK — bypasses Firestore rules)
+    const recentLogs = await adminGetLogs(coachId, athleteId, 6);
     const contextLogs = recentLogs.filter((l) => l.id !== logId).slice(0, 5);
 
     const contextSummary = contextLogs.length > 0
@@ -99,12 +99,13 @@ Considera:
       };
     }
 
-    // Persist AI analysis back to Firestore
-    await updateLogAI(coachId, athleteId, logId, aiAnalysis);
+    // Persist AI analysis back to Firestore (Admin SDK)
+    await adminUpdateLogAI(coachId, athleteId, logId, aiAnalysis);
 
     return NextResponse.json({ success: true, aiAnalysis });
   } catch (error) {
     console.error("AI feedback error:", error);
-    return NextResponse.json({ success: false, error: "AI analysis failed" }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    return NextResponse.json({ success: false, error: message }, { status: 500 });
   }
 }

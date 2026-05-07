@@ -4,9 +4,33 @@
  */
 import { FieldValue, Timestamp } from "firebase-admin/firestore";
 import { getAdminDb } from "./firebase-admin";
-import type { Coach, Athlete, AthleteAccess, Invite } from "@/types";
+import type { Coach, Athlete, AthleteAccess, Invite, WorkoutLog } from "@/types";
 
 const db = () => getAdminDb();
+
+const logsCollection = (coachId: string, athleteId: string) =>
+  db().collection("coaches").doc(coachId).collection("athletes").doc(athleteId).collection("logs");
+
+export async function adminGetLogs(
+  coachId: string,
+  athleteId: string,
+  limitCount = 50
+): Promise<WorkoutLog[]> {
+  const snap = await logsCollection(coachId, athleteId)
+    .orderBy("date", "desc")
+    .limit(limitCount)
+    .get();
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as unknown as WorkoutLog));
+}
+
+export async function adminUpdateLogAI(
+  coachId: string,
+  athleteId: string,
+  logId: string,
+  aiAnalysis: WorkoutLog["aiAnalysis"]
+): Promise<void> {
+  await logsCollection(coachId, athleteId).doc(logId).update({ aiAnalysis });
+}
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
 
