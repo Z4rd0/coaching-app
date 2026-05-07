@@ -1,5 +1,5 @@
 // Coach App Service Worker — network-first, offline fallback
-const CACHE_NAME = "coach-app-v2";
+const CACHE_NAME = "coach-app-v3";
 const OFFLINE_URL = "/offline.html";
 
 self.addEventListener("install", (event) => {
