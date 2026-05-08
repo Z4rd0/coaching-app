@@ -61,6 +61,9 @@ export interface Exercise {
 
 export interface Session {
   dayOfWeek: number; // 0 = Monday … 6 = Sunday
+  /** Optional ISO date "YYYY-MM-DD" — when set, overrides dayOfWeek
+   *  for scheduling. Lets the coach pin a session to a precise calendar day. */
+  scheduledDate?: string;
   type: "strength" | "cardio" | "mobility" | "rest" | "other";
   title: string;
   exercises: Exercise[];

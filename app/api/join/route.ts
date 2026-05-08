@@ -17,34 +17,25 @@ export async function GET(req: NextRequest) {
 
   try {
     const db = getAdminDb();
-    const projectId = (db as unknown as { _settings?: { projectId?: string } })._settings?.projectId
-      ?? process.env.FIREBASE_PROJECT_ID
-      ?? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
     const [coachSnap, athleteSnap] = await Promise.all([
       db.doc(`coaches/${coachId}`).get(),
       db.doc(`coaches/${coachId}/athletes/${athleteId}`).get(),
     ]);
 
-    if (!coachSnap.exists || !athleteSnap.exists) {
-      return NextResponse.json({
-        error: "Not found",
-        debug: {
-          projectId,
-          coachId,
-          athleteId,
-          coachExists: coachSnap.exists,
-          athleteExists: athleteSnap.exists,
-        },
-      }, { status: 404 });
+    // The athlete doc is the source of truth for the join. The coach doc
+    // is only used to display the coach's name — fall back gracefully
+    // if it's missing (older accounts may not have one).
+    if (!athleteSnap.exists) {
+      return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
     const athlete = athleteSnap.data()!;
     if (athlete.status !== "pending") {
-      return NextResponse.json({ error: "already_used", status: athlete.status }, { status: 410 });
+      return NextResponse.json({ error: "already_used" }, { status: 410 });
     }
 
     return NextResponse.json({
-      coachName: coachSnap.data()?.name ?? "",
+      coachName: coachSnap.data()?.name ?? "Coach",
       athleteName: athlete.name ?? "",
       athleteEmail: athlete.email ?? "",
     });

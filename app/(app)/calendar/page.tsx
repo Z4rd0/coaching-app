@@ -31,10 +31,25 @@ interface ScheduledSession {
  */
 function getSessionsForDate(date: Date, program: Program): ScheduledSession[] {
   const result: ScheduledSession[] = [];
+  const targetISO = (() => {
+    const d = new Date(date);
+    d.setHours(0, 0, 0, 0);
+    return d.toISOString().slice(0, 10);
+  })();
+
+  // Pass 1: any session pinned to a specific calendar date wins
+  for (const cycle of program.cycles) {
+    for (const week of cycle.weeks) {
+      for (const session of week.sessions) {
+        if (session.scheduledDate === targetISO) {
+          result.push({ session, cycleNumber: cycle.cycleNumber, weekNumber: week.weekNumber });
+        }
+      }
+    }
+  }
 
   if (program.startDate) {
     const start = new Date(program.startDate + "T00:00:00");
-    // Normalise both dates to midnight so diff is exact days
     const target = new Date(date);
     target.setHours(0, 0, 0, 0);
     start.setHours(0, 0, 0, 0);
@@ -43,6 +58,7 @@ function getSessionsForDate(date: Date, program: Program): ScheduledSession[] {
     for (const cycle of program.cycles) {
       for (const week of cycle.weeks) {
         for (const session of week.sessions) {
+          if (session.scheduledDate) continue; // already handled above
           const sessionDate = new Date(start);
           sessionDate.setDate(start.getDate() + totalWeeks * 7 + session.dayOfWeek);
           if (isSameDay(sessionDate, target)) {
@@ -61,6 +77,7 @@ function getSessionsForDate(date: Date, program: Program): ScheduledSession[] {
   for (const cycle of program.cycles) {
     for (const week of cycle.weeks) {
       for (const session of week.sessions) {
+        if (session.scheduledDate) continue;
         if (session.dayOfWeek === dow && !seen.has(session.title)) {
           seen.add(session.title);
           result.push({ session, cycleNumber: cycle.cycleNumber, weekNumber: week.weekNumber });

@@ -200,7 +200,13 @@ export default function ProgramBuilder({ cycles, onChange }: Props) {
                           {/* Summary */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 flex-wrap">
-                              <span className="text-xs font-medium text-slate-400">{DAYS[session.dayOfWeek]}</span>
+                              {session.scheduledDate ? (
+                                <span className="text-xs font-medium text-primary">
+                                  📅 {session.scheduledDate}
+                                </span>
+                              ) : (
+                                <span className="text-xs font-medium text-slate-400">{DAYS[session.dayOfWeek]}</span>
+                              )}
                               <span className="text-xs text-slate-600">·</span>
                               <span className="text-xs text-slate-400">{SESSION_TYPE_LABELS[session.type]}</span>
                               {session.title && (
@@ -320,6 +326,29 @@ export default function ProgramBuilder({ cycles, onChange }: Props) {
                                 </select>
                               </Field>
                             </div>
+
+                            <Field label="Data specifica (opzionale — sovrascrive il giorno)">
+                              <div className="flex gap-2">
+                                <input
+                                  type="date"
+                                  value={session.scheduledDate ?? ""}
+                                  onChange={(e) => updateSession(ci, wi, si, (s) => ({
+                                    ...s,
+                                    scheduledDate: e.target.value || undefined,
+                                  }))}
+                                  className={`${selectCls} flex-1`}
+                                />
+                                {session.scheduledDate && (
+                                  <button
+                                    type="button"
+                                    onClick={() => updateSession(ci, wi, si, (s) => ({ ...s, scheduledDate: undefined }))}
+                                    className="px-3 py-1.5 text-xs text-slate-400 border border-slate-600 rounded-lg hover:text-white"
+                                  >
+                                    Rimuovi
+                                  </button>
+                                )}
+                              </div>
+                            </Field>
 
                             <Field label="Titolo sessione">
                               <input

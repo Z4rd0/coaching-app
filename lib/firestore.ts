@@ -394,6 +394,16 @@ export async function updateLogAI(
 export function getTodaySession(program: Program | AthleteProgram): Session | null {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
+  const todayISO = today.toISOString().slice(0, 10);
+
+  // Pass 1: any session with an explicit scheduledDate matching today wins
+  for (const cycle of program.cycles) {
+    for (const week of cycle.weeks) {
+      for (const session of week.sessions) {
+        if (session.scheduledDate === todayISO) return session;
+      }
+    }
+  }
 
   if (program.startDate) {
     const start = new Date(program.startDate + "T00:00:00");
@@ -401,6 +411,8 @@ export function getTodaySession(program: Program | AthleteProgram): Session | nu
     for (const cycle of program.cycles) {
       for (const week of cycle.weeks) {
         for (const session of week.sessions) {
+          // Skip sessions that are pinned to a specific date — already handled above
+          if (session.scheduledDate) continue;
           const d = new Date(start);
           d.setDate(start.getDate() + totalWeeks * 7 + session.dayOfWeek);
           if (d.getTime() === today.getTime()) return session;
@@ -415,6 +427,7 @@ export function getTodaySession(program: Program | AthleteProgram): Session | nu
   for (const cycle of program.cycles) {
     for (const week of cycle.weeks) {
       for (const session of week.sessions) {
+        if (session.scheduledDate) continue;
         if (session.dayOfWeek === dow) return session;
       }
     }

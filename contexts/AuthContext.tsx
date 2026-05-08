@@ -58,14 +58,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(firebaseUser);
         if (firebaseUser) {
           // Try coach first — saves a read for coach users
-          const coachData = await firestoreRead(() => getCoach(firebaseUser.uid));
-          setCoach(coachData);
+          let coachData = await firestoreRead(() => getCoach(firebaseUser.uid));
           if (coachData) {
+            setCoach(coachData);
             setRole("coach");
           } else {
+            // Not a coach by doc — check if they're an athlete
             const accessData = await firestoreRead(() => getAthleteAccessByUid(firebaseUser.uid));
-            setAthleteAccess(accessData);
-            setRole(accessData ? "athlete" : null);
+            if (accessData) {
+              setAthleteAccess(accessData);
+              setRole("athlete");
+            } else {
+              // Neither coach nor athlete — self-heal: this user authenticated
+              // but has no coach doc (likely created during an earlier offline
+              // signup or had it deleted). Recreate it so the app works.
+              const fallbackName = firebaseUser.displayName ?? firebaseUser.email?.split("@")[0] ?? "Coach";
+              await createCoach(firebaseUser.uid, fallbackName, firebaseUser.email ?? "");
+              coachData = await firestoreRead(() => getCoach(firebaseUser.uid));
+              setCoach(coachData);
+              setRole("coach");
+            }
           }
         } else {
           setCoach(null);

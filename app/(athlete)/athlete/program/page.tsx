@@ -140,7 +140,11 @@ export default function AthleteProgramPage() {
                                   <div className={`w-2 h-2 rounded-full shrink-0 ${TYPE_COLOR[session.type] ?? "bg-slate-500"}`} />
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 flex-wrap">
-                                      <span className="text-xs text-slate-400">{DAYS[session.dayOfWeek]}</span>
+                                      {session.scheduledDate ? (
+                                        <span className="text-xs font-medium text-primary">📅 {session.scheduledDate}</span>
+                                      ) : (
+                                        <span className="text-xs text-slate-400">{DAYS[session.dayOfWeek]}</span>
+                                      )}
                                       <span className="text-xs text-slate-600">·</span>
                                       <span className="text-xs text-slate-400">{SESSION_TYPE_LABELS[session.type]}</span>
                                       {session.title && (
