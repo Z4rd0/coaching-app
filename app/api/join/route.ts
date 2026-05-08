@@ -17,18 +17,30 @@ export async function GET(req: NextRequest) {
 
   try {
     const db = getAdminDb();
+    const projectId = (db as unknown as { _settings?: { projectId?: string } })._settings?.projectId
+      ?? process.env.FIREBASE_PROJECT_ID
+      ?? process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID;
     const [coachSnap, athleteSnap] = await Promise.all([
       db.doc(`coaches/${coachId}`).get(),
       db.doc(`coaches/${coachId}/athletes/${athleteId}`).get(),
     ]);
 
     if (!coachSnap.exists || !athleteSnap.exists) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+      return NextResponse.json({
+        error: "Not found",
+        debug: {
+          projectId,
+          coachId,
+          athleteId,
+          coachExists: coachSnap.exists,
+          athleteExists: athleteSnap.exists,
+        },
+      }, { status: 404 });
     }
 
     const athlete = athleteSnap.data()!;
     if (athlete.status !== "pending") {
-      return NextResponse.json({ error: "already_used" }, { status: 410 });
+      return NextResponse.json({ error: "already_used", status: athlete.status }, { status: 410 });
     }
 
     return NextResponse.json({
@@ -38,6 +50,7 @@ export async function GET(req: NextRequest) {
     });
   } catch (err) {
     console.error("join/info error:", err);
-    return NextResponse.json({ error: "Server error" }, { status: 500 });
+    const message = err instanceof Error ? err.message : String(err);
+    return NextResponse.json({ error: "Server error", message }, { status: 500 });
   }
 }
