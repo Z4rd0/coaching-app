@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { Cycle, Week, Session, Exercise, SessionType } from "@/types";
+import type { Cycle, Week, Session, Exercise, SessionType, HiitBlock, HiitInterval, HiitFormat } from "@/types";
 import { SESSION_TYPE_LABELS } from "@/types";
 import ExerciseForm from "./ExerciseForm";
 import { emptyExercise, emptySession, emptyWeek, emptyCycle } from "@/lib/programHelpers";
@@ -17,7 +17,30 @@ const TYPE_COLOR: Record<string, string> = {
   rest: "bg-slate-500",
   other: "bg-slate-400",
   circuit: "bg-yellow-400",
+  hiit: "bg-rose-500",
 };
+
+const HIIT_FORMAT_LABELS: Record<HiitFormat, string> = {
+  interval: "Interval",
+  tabata: "Tabata",
+  emom: "EMOM",
+  amrap: "AMRAP",
+  for_time: "For Time",
+};
+
+function emptyHiitBlock(): HiitBlock {
+  return {
+    rounds: 3,
+    intervals: [
+      { label: "", durationSeconds: 40, isRest: false },
+      { label: "Recupero", durationSeconds: 20, isRest: true },
+    ],
+  };
+}
+
+function emptyHiitInterval(): HiitInterval {
+  return { label: "", durationSeconds: 30, isRest: false };
+}
 
 const inputCls = "w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-primary";
 const selectCls = "w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary";
@@ -142,6 +165,29 @@ export default function ProgramBuilder({ cycles, onChange }: Props) {
   const removeExercise = (ci: number, wi: number, si: number, ei: number) =>
     updateSession(ci, wi, si, (s) => ({ ...s, exercises: s.exercises.filter((_, i) => i !== ei) }));
 
+  // ── HIIT block/interval handlers ──────────────────────────────────────────
+
+  const updateHiitBlock = (ci: number, wi: number, si: number, bi: number, fn: (b: HiitBlock) => HiitBlock) =>
+    updateSession(ci, wi, si, (s) => ({
+      ...s,
+      hiitBlocks: (s.hiitBlocks ?? []).map((b, i) => i === bi ? fn(b) : b),
+    }));
+
+  const addHiitBlock = (ci: number, wi: number, si: number) =>
+    updateSession(ci, wi, si, (s) => ({ ...s, hiitBlocks: [...(s.hiitBlocks ?? []), emptyHiitBlock()] }));
+
+  const removeHiitBlock = (ci: number, wi: number, si: number, bi: number) =>
+    updateSession(ci, wi, si, (s) => ({ ...s, hiitBlocks: (s.hiitBlocks ?? []).filter((_, i) => i !== bi) }));
+
+  const addHiitInterval = (ci: number, wi: number, si: number, bi: number) =>
+    updateHiitBlock(ci, wi, si, bi, (b) => ({ ...b, intervals: [...b.intervals, emptyHiitInterval()] }));
+
+  const removeHiitInterval = (ci: number, wi: number, si: number, bi: number, ii: number) =>
+    updateHiitBlock(ci, wi, si, bi, (b) => ({ ...b, intervals: b.intervals.filter((_, i) => i !== ii) }));
+
+  const updateHiitInterval = (ci: number, wi: number, si: number, bi: number, ii: number, iv: HiitInterval) =>
+    updateHiitBlock(ci, wi, si, bi, (b) => ({ ...b, intervals: b.intervals.map((v, i) => i === ii ? iv : v) }));
+
   // ── Render ────────────────────────────────────────────────────────────────
 
   return (
@@ -220,7 +266,9 @@ export default function ProgramBuilder({ cycles, onChange }: Props) {
                             <p className="text-xs text-slate-500 mt-0.5">
                               {session.type === "circuit"
                                 ? `${session.targetRounds ?? "?"} round · ${session.exercises.length} esercizi · ${session.durationMin} min`
-                                : `${session.exercises.length} esercizi · ${session.durationMin} min · RPE ${session.targetRPE}`}
+                                : session.type === "hiit"
+                                  ? `${(session.hiitBlocks ?? []).reduce((s, b) => s + b.rounds, 0)} round · ${(session.hiitBlocks ?? []).length} blocco/i · ${session.durationMin} min`
+                                  : `${session.exercises.length} esercizi · ${session.durationMin} min · RPE ${session.targetRPE}`}
                             </p>
                           </div>
 
@@ -405,7 +453,113 @@ export default function ProgramBuilder({ cycles, onChange }: Props) {
                               </div>
                             )}
 
-                            {/* Exercises */}
+                            {/* HIIT builder */}
+                            {session.type === "hiit" && (
+                              <div className="space-y-3 p-3 bg-rose-500/5 border border-rose-500/20 rounded-xl">
+                                <div className="grid grid-cols-2 gap-2">
+                                  <Field label="Formato HIIT">
+                                    <select
+                                      value={session.hiitFormat ?? "interval"}
+                                      onChange={(e) => updateSession(ci, wi, si, (s) => ({ ...s, hiitFormat: e.target.value as HiitFormat }))}
+                                      className={selectCls}
+                                    >
+                                      {(Object.entries(HIIT_FORMAT_LABELS) as [HiitFormat, string][]).map(([k, v]) => (
+                                        <option key={k} value={k}>{v}</option>
+                                      ))}
+                                    </select>
+                                  </Field>
+                                  {(session.hiitFormat === "amrap" || session.hiitFormat === "for_time") && (
+                                    <Field label="Cap totale (sec)">
+                                      <input
+                                        type="number" min={1}
+                                        value={session.hiitTotalSeconds ?? ""}
+                                        onChange={(e) => updateSession(ci, wi, si, (s) => ({ ...s, hiitTotalSeconds: e.target.value ? +e.target.value : undefined }))}
+                                        placeholder="600"
+                                        className={inputCls}
+                                      />
+                                    </Field>
+                                  )}
+                                </div>
+
+                                {(session.hiitBlocks ?? []).map((block, bi) => (
+                                  <div key={bi} className="bg-slate-900/60 rounded-xl p-3 space-y-2.5">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-xs font-semibold text-rose-300 uppercase tracking-wide">Blocco {bi + 1}</span>
+                                      {(session.hiitBlocks?.length ?? 0) > 1 && (
+                                        <button type="button" onClick={() => removeHiitBlock(ci, wi, si, bi)} className="text-xs text-red-400 hover:text-red-300">Elimina blocco</button>
+                                      )}
+                                    </div>
+                                    <div className="w-24">
+                                      <Field label="Round">
+                                        <input
+                                          type="number" min={1}
+                                          value={block.rounds}
+                                          onChange={(e) => updateHiitBlock(ci, wi, si, bi, (b) => ({ ...b, rounds: +e.target.value || 1 }))}
+                                          className={inputCls}
+                                        />
+                                      </Field>
+                                    </div>
+
+                                    {block.intervals.map((iv, ii) => (
+                                      <div key={ii} className="flex items-center gap-1.5">
+                                        <input
+                                          value={iv.label}
+                                          onChange={(e) => updateHiitInterval(ci, wi, si, bi, ii, { ...iv, label: e.target.value })}
+                                          placeholder={iv.isRest ? "Recupero" : "Es. Squat jump"}
+                                          className="flex-1 bg-slate-800 border border-slate-600 rounded-lg px-2.5 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-primary min-w-0"
+                                        />
+                                        <input
+                                          type="number" min={1}
+                                          value={iv.durationSeconds}
+                                          onChange={(e) => updateHiitInterval(ci, wi, si, bi, ii, { ...iv, durationSeconds: +e.target.value || 10 })}
+                                          className="w-14 bg-slate-800 border border-slate-600 rounded-lg px-2 py-2 text-sm text-white text-center focus:outline-none focus:ring-1 focus:ring-primary"
+                                        />
+                                        <span className="text-xs text-slate-500 shrink-0">s</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => updateHiitInterval(ci, wi, si, bi, ii, { ...iv, isRest: !iv.isRest })}
+                                          className={`text-[11px] font-bold px-2 py-1.5 rounded-lg border shrink-0 transition-colors ${
+                                            iv.isRest
+                                              ? "border-slate-600 text-slate-400"
+                                              : "border-primary text-primary"
+                                          }`}
+                                        >
+                                          {iv.isRest ? "REST" : "WORK"}
+                                        </button>
+                                        {block.intervals.length > 1 && (
+                                          <button type="button" onClick={() => removeHiitInterval(ci, wi, si, bi, ii)} className="text-slate-600 hover:text-red-400 p-1 shrink-0">
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                                              <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                                            </svg>
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))}
+
+                                    <button type="button" onClick={() => addHiitInterval(ci, wi, si, bi)} className="text-rose-400 text-xs font-medium hover:text-rose-300">
+                                      + Intervallo
+                                    </button>
+                                  </div>
+                                ))}
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!(session.hiitBlocks ?? []).length) {
+                                      updateSession(ci, wi, si, (s) => ({ ...s, hiitBlocks: [emptyHiitBlock()] }));
+                                    } else {
+                                      addHiitBlock(ci, wi, si);
+                                    }
+                                  }}
+                                  className="w-full py-2 text-xs text-rose-400 border border-dashed border-rose-500/30 rounded-xl hover:border-rose-500/60 transition-colors"
+                                >
+                                  + Blocco HIIT
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Exercises (hidden for HIIT) */}
+                            {session.type !== "hiit" && (
                             <div className="space-y-2">
                               <div className="flex items-center justify-between">
                                 <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">Esercizi</span>
@@ -428,6 +582,7 @@ export default function ProgramBuilder({ cycles, onChange }: Props) {
                                 />
                               ))}
                             </div>
+                            )}
 
                             <Field label="Note sessione">
                               <textarea

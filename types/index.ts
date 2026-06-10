@@ -58,12 +58,35 @@ export interface Exercise {
   notes: string;
 }
 
+// ─── HIIT ─────────────────────────────────────────────────────────────────────
+
+export interface HiitInterval {
+  label: string;
+  durationSeconds: number;
+  isRest: boolean;
+}
+
+export interface HiitBlock {
+  rounds: number;
+  intervals: HiitInterval[];
+}
+
+export type HiitFormat = "interval" | "tabata" | "emom" | "amrap" | "for_time";
+
+export interface HiitLog {
+  roundsCompleted: number;
+  totalTimeSeconds?: number;
+  avgHeartRate?: number;
+  maxHeartRate?: number;
+  calories?: number;
+}
+
 export interface Session {
   dayOfWeek: number; // 0 = Monday … 6 = Sunday
   /** Optional ISO date "YYYY-MM-DD" — when set, overrides dayOfWeek
    *  for scheduling. Lets the coach pin a session to a precise calendar day. */
   scheduledDate?: string;
-  type: "strength" | "cardio" | "mobility" | "rest" | "other" | "circuit";
+  type: "strength" | "cardio" | "mobility" | "rest" | "other" | "circuit" | "hiit";
   title: string;
   exercises: Exercise[];
   targetRPE: number; // 1-10
@@ -72,6 +95,10 @@ export interface Session {
   // Circuit-specific
   targetRounds?: number;
   restBetweenRoundsSeconds?: number;
+  // HIIT-specific
+  hiitFormat?: HiitFormat;
+  hiitBlocks?: HiitBlock[];
+  hiitTotalSeconds?: number;
 }
 
 export interface Week {
@@ -216,6 +243,7 @@ export interface WorkoutLog {
   exerciseLogs?: ExerciseLog[];
   cardioLog?: CardioLog;
   circuitLog?: CircuitLog;
+  hiitLog?: HiitLog;
   /** Feedback written by the coach on this workout — shown to the athlete */
   coachComment?: string;
   /** Legacy: old logs may carry an AI analysis from the removed feature */
@@ -235,6 +263,7 @@ export const SESSION_TYPE_LABELS: Record<SessionType, string> = {
   rest: "Riposo",
   other: "Altro",
   circuit: "Circuit",
+  hiit: "HIIT",
 };
 
 export const MOOD_LABELS: Record<number, string> = {

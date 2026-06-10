@@ -11,9 +11,10 @@ import {
   getGroupsForAthlete,
   getActiveGroupProgram,
 } from "@/lib/firestore";
-import type { Group, Cycle, Session, WorkoutLog, ExerciseLog, CardioLog, CircuitLog } from "@/types";
+import type { Group, Cycle, Session, WorkoutLog, ExerciseLog, CardioLog, CircuitLog, HiitLog } from "@/types";
 import { MOOD_LABELS, ENERGY_LABELS, SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import HiitTimer from "@/components/HiitTimer";
 
 const inputCls = "w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-primary";
 const labelCls = "block text-xs text-slate-400 mb-1";
@@ -105,6 +106,8 @@ export default function AthleteLogPage() {
   const [cardioLog, setCardioLog] = useState<CardioLog>(emptyCardioLog());
   const [distanceKm, setDistanceKm] = useState("");
   const [circuitLog, setCircuitLog] = useState<CircuitLog>({ roundsCompleted: 1 });
+  const [hiitLog, setHiitLog] = useState<HiitLog>({ roundsCompleted: 0 });
+  const [showHiitTimer, setShowHiitTimer] = useState(false);
   const [activeTimer, setActiveTimer] = useState<{ label: string; remaining: number; total: number } | null>(null);
 
   const applySelection = (key: string, opts: SessionOption[]) => {
@@ -175,6 +178,7 @@ export default function AthleteLogPage() {
   const showStrength = (sessionType === "strength" || sessionType === "mobility" || sessionType === "other") && (selectedSession?.exercises.length ?? 0) > 0;
   const showCardio = sessionType === "cardio";
   const showCircuit = sessionType === "circuit";
+  const showHiit = sessionType === "hiit";
 
   const updateExLog = (i: number, patch: Partial<ExerciseLog>) =>
     setExerciseLogs((prev) => prev.map((el, idx) => idx === i ? { ...el, ...patch } : el));
@@ -202,6 +206,7 @@ export default function AthleteLogPage() {
 
       const hasExerciseLogs = (showStrength || showCircuit) && exerciseLogs.length > 0;
       const finalCircuit: CircuitLog | undefined = showCircuit ? circuitLog : undefined;
+      const finalHiit: HiitLog | undefined = showHiit ? hiitLog : undefined;
 
       const logData: Omit<WorkoutLog, "id" | "createdAt"> = {
         date: Timestamp.fromDate(new Date(logDate + "T12:00:00")),
@@ -217,6 +222,7 @@ export default function AthleteLogPage() {
         ...(hasExerciseLogs ? { exerciseLogs } : {}),
         ...(finalCardio ? { cardioLog: finalCardio } : {}),
         ...(finalCircuit ? { circuitLog: finalCircuit } : {}),
+        ...(finalHiit ? { hiitLog: finalHiit } : {}),
       };
 
       const docRef = await createLog(coachId, athleteId, logData);
@@ -484,6 +490,73 @@ export default function AthleteLogPage() {
           </div>
         )}
 
+        {/* ── HIIT section ── */}
+        {showHiit && (
+          <div className="space-y-3">
+            {selectedSession?.hiitBlocks && selectedSession.hiitBlocks.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setShowHiitTimer(true)}
+                className="w-full flex items-center justify-center gap-3 py-4 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 font-semibold text-base hover:bg-rose-500/20 transition-colors"
+              >
+                <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" />
+                </svg>
+                Avvia Timer HIIT
+              </button>
+            )}
+
+            <div className="bg-slate-800 rounded-2xl p-4 border border-rose-500/20">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-sm font-semibold text-white">
+                  Round completati
+                  {selectedSession?.hiitBlocks && (
+                    <span className="text-xs text-slate-400 font-normal ml-2">
+                      (target: {selectedSession.hiitBlocks.reduce((s, b) => s + b.rounds, 0)})
+                    </span>
+                  )}
+                </label>
+                <span className="text-xl font-bold text-rose-400">{hiitLog.roundsCompleted}</span>
+              </div>
+              <input
+                type="range" min={0} max={50} step={1}
+                value={hiitLog.roundsCompleted}
+                onChange={(e) => setHiitLog((p) => ({ ...p, roundsCompleted: +e.target.value }))}
+                className="w-full accent-rose-500"
+              />
+              <div className="flex justify-between text-xs text-slate-500 mt-1"><span>0</span><span>25</span><span>50</span></div>
+            </div>
+
+            {hiitLog.totalTimeSeconds != null && (
+              <p className="text-xs text-slate-400 text-center">
+                Tempo totale:{" "}
+                {String(Math.floor(hiitLog.totalTimeSeconds / 60)).padStart(2, "0")}:{String(hiitLog.totalTimeSeconds % 60).padStart(2, "0")}
+              </p>
+            )}
+
+            <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-3">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Metriche</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="FC media (bpm)">
+                  <input type="number" min={0} value={hiitLog.avgHeartRate ?? ""}
+                    onChange={(e) => setHiitLog((p) => ({ ...p, avgHeartRate: e.target.value ? +e.target.value : undefined }))}
+                    placeholder="155" className={inputCls} />
+                </Field>
+                <Field label="FC max (bpm)">
+                  <input type="number" min={0} value={hiitLog.maxHeartRate ?? ""}
+                    onChange={(e) => setHiitLog((p) => ({ ...p, maxHeartRate: e.target.value ? +e.target.value : undefined }))}
+                    placeholder="185" className={inputCls} />
+                </Field>
+                <Field label="Calorie">
+                  <input type="number" min={0} value={hiitLog.calories ?? ""}
+                    onChange={(e) => setHiitLog((p) => ({ ...p, calories: e.target.value ? +e.target.value : undefined }))}
+                    placeholder="450" className={inputCls} />
+                </Field>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Duration */}
         <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
           <div className="flex items-center justify-between mb-3">
@@ -545,6 +618,17 @@ export default function AthleteLogPage() {
           {saving ? "Salvataggio…" : "Salva allenamento ✨"}
         </button>
       </form>
+
+      {/* ── HIIT timer overlay ── */}
+      {showHiitTimer && selectedSession?.hiitBlocks && selectedSession.hiitBlocks.length > 0 && (
+        <HiitTimer
+          blocks={selectedSession.hiitBlocks}
+          onClose={(rounds, totalSeconds) => {
+            setHiitLog((p) => ({ ...p, roundsCompleted: rounds, totalTimeSeconds: totalSeconds }));
+            setShowHiitTimer(false);
+          }}
+        />
+      )}
 
       {/* ── Rest timer overlay ── */}
       {activeTimer && (

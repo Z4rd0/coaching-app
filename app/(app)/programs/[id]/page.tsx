@@ -20,6 +20,7 @@ const TYPE_COLOR: Record<Session["type"], string> = {
   rest:     "bg-slate-600/40 text-slate-400",
   other:    "bg-slate-600/40 text-slate-300",
   circuit:  "bg-yellow-400/20 text-yellow-300",
+  hiit:     "bg-rose-500/20 text-rose-300",
 };
 
 // ─── Date helper ─────────────────────────────────────────────────────────────
