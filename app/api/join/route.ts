@@ -30,14 +30,13 @@ export async function GET(req: NextRequest) {
     }
 
     const athlete = athleteSnap.data()!;
-    if (athlete.status !== "pending") {
-      return NextResponse.json({ error: "already_used" }, { status: 410 });
-    }
+    const alreadyActive = athlete.status === "active";
 
     return NextResponse.json({
       coachName: coachSnap.data()?.name ?? "Coach",
       athleteName: athlete.name ?? "",
       athleteEmail: athlete.email ?? "",
+      alreadyActive,
     });
   } catch (err) {
     console.error("join/info error:", err);

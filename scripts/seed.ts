@@ -57,7 +57,6 @@ async function main() {
     email: "matteo@coachapp.it",
     goals: "Migliorare forza massimale e resistenza aerobica",
     notes: "Focus su tecnica squat e deadlift",
-    garminConnected: false,
   });
   console.log("✅ Atleta creato");
 

@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
-import { getActiveProgram, getLogs, getTodaySession } from "@/lib/firestore";
+import { getActiveProgram, getLogs, getTodaySession, getAthletesAdherence } from "@/lib/firestore";
+import type { AthleteAdherence } from "@/lib/firestore";
 import type { Program, WorkoutLog } from "@/types";
 import { SESSION_TYPE_LABELS, MOOD_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
@@ -18,6 +19,7 @@ export default function DashboardPage() {
   const [recentLogs, setRecentLogs] = useState<WorkoutLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [sessionExpanded, setSessionExpanded] = useState(false);
+  const [adherence, setAdherence] = useState<AthleteAdherence[]>([]);
 
   useEffect(() => {
     if (!user) return;
@@ -25,9 +27,11 @@ export default function DashboardPage() {
     Promise.all([
       getActiveProgram(user.uid),
       getLogs(user.uid, athleteId, 5),
-    ]).then(([prog, logs]) => {
+      getAthletesAdherence(user.uid).catch(() => [] as AthleteAdherence[]),
+    ]).then(([prog, logs, adh]) => {
       setProgram(prog);
       setRecentLogs(logs);
+      setAdherence(adh);
     }).finally(() => setLoading(false));
   }, [user]);
 
@@ -174,16 +178,68 @@ export default function DashboardPage() {
         <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">
           Questa settimana
         </h2>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <StatCard label="Allenamenti" value={String(weekLogs.length)} />
           <StatCard label="RPE medio" value={String(avgRPE)} />
-          <div className="bg-slate-800 rounded-2xl p-3 border border-slate-700 flex flex-col items-center justify-center gap-1">
-            <span className="text-lg">⌚</span>
-            <span className="text-xs text-slate-400 text-center">Garmin sync</span>
-            <span className="text-[10px] text-slate-600">coming soon</span>
-          </div>
         </div>
       </section>
+
+      {/* Athletes adherence */}
+      {adherence.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
+              I tuoi atleti
+            </h2>
+            <Link href="/athletes" className="text-primary text-xs font-medium">
+              Tutti
+            </Link>
+          </div>
+          <div className="bg-slate-800 rounded-2xl border border-slate-700 divide-y divide-slate-700/50 overflow-hidden">
+            {[...adherence]
+              .sort((a, b) => daysSince(a.lastLogDate) === daysSince(b.lastLogDate)
+                ? a.weekSessions - b.weekSessions
+                : daysSince(b.lastLogDate) - daysSince(a.lastLogDate))
+              .map(({ athlete, weekSessions, lastLogDate }) => {
+                const days = daysSince(lastLogDate);
+                const inactive = days >= 5;
+                return (
+                  <Link
+                    key={athlete.id}
+                    href={`/athletes/${athlete.id}`}
+                    className="flex items-center gap-3 px-4 py-3"
+                  >
+                    <div className="relative shrink-0">
+                      <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
+                        <span className="text-primary font-bold text-sm">
+                          {athlete.name.charAt(0).toUpperCase()}
+                        </span>
+                      </div>
+                      {inactive && (
+                        <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-slate-800" />
+                      )}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-sm font-medium truncate">{athlete.name}</p>
+                      <p className="text-xs text-slate-500">
+                        {weekSessions} {weekSessions === 1 ? "sessione" : "sessioni"} negli ultimi 7 giorni
+                      </p>
+                    </div>
+                    <p className={`text-xs shrink-0 ${inactive ? "text-red-400 font-medium" : "text-slate-500"}`}>
+                      {lastLogDate === null
+                        ? "mai loggato"
+                        : days === 0
+                        ? "oggi"
+                        : days === 1
+                        ? "ieri"
+                        : `${days} gg fa`}
+                    </p>
+                  </Link>
+                );
+              })}
+          </div>
+        </section>
+      )}
 
       {/* Recent logs */}
       {recentLogs.length > 0 && (
@@ -212,9 +268,6 @@ export default function DashboardPage() {
                     {format(log.date.toDate(), "d MMM", { locale: it })} · {log.actualDurationMin} min · RPE {log.perceivedRPE}
                   </p>
                 </div>
-                {log.aiAnalysis && (
-                  <span className="text-xs bg-primary/20 text-primary-300 px-2 py-0.5 rounded-full shrink-0">AI</span>
-                )}
               </Link>
             ))}
           </div>
@@ -224,6 +277,12 @@ export default function DashboardPage() {
       <div className="h-2" />
     </div>
   );
+}
+
+/** Whole days since the date; Infinity when never logged (sorts to the top) */
+function daysSince(d: Date | null): number {
+  if (!d) return Infinity;
+  return Math.floor((Date.now() - d.getTime()) / (24 * 60 * 60 * 1000));
 }
 
 function StatCard({ label, value }: { label: string; value: string }) {

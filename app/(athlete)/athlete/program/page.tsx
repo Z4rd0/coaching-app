@@ -2,10 +2,13 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
-import { getAthletePrograms } from "@/lib/firestore";
+import { getAthletePrograms, getGroupsForAthlete, getGroupPrograms } from "@/lib/firestore";
 import type { AthleteProgram } from "@/types";
 import { SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
+
+/** Personal program, or a shared group program tagged with its group name */
+type DisplayProgram = AthleteProgram & { groupName?: string };
 
 const TYPE_COLOR: Record<string, string> = {
   strength: "bg-blue-500",
@@ -19,17 +22,29 @@ const DAYS = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
 export default function AthleteProgramPage() {
   const { user, athleteAccess } = useAuth();
-  const [programs, setPrograms] = useState<AthleteProgram[]>([]);
-  const [selected, setSelected] = useState<AthleteProgram | null>(null);
+  const [programs, setPrograms] = useState<DisplayProgram[]>([]);
+  const [selected, setSelected] = useState<DisplayProgram | null>(null);
   const [loading, setLoading] = useState(true);
   const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!user || !athleteAccess) return;
     const { coachId, athleteId } = athleteAccess;
-    getAthletePrograms(coachId, athleteId).then((progs) => {
-      setPrograms(progs);
-      const active = progs.find((p) => p.isActive) ?? progs[0] ?? null;
+    Promise.all([
+      getAthletePrograms(coachId, athleteId),
+      getGroupsForAthlete(coachId, user.uid).then((groups) =>
+        Promise.all(
+          groups.map(async (g) =>
+            (await getGroupPrograms(coachId, g.id)).map(
+              (p): DisplayProgram => ({ ...p, groupName: g.name })
+            )
+          )
+        ).then((nested) => nested.flat())
+      ),
+    ]).then(([personal, fromGroups]) => {
+      const all: DisplayProgram[] = [...personal, ...fromGroups];
+      setPrograms(all);
+      const active = all.find((p) => p.isActive) ?? all[0] ?? null;
       setSelected(active);
     }).finally(() => setLoading(false));
   }, [user, athleteAccess]);
@@ -67,7 +82,7 @@ export default function AthleteProgramPage() {
                       : "border-slate-600 text-slate-400"
                   }`}
                 >
-                  {p.name}
+                  {p.groupName ? `👥 ${p.name}` : p.name}
                 </button>
               ))}
             </div>
@@ -82,6 +97,11 @@ export default function AthleteProgramPage() {
                     <h2 className="text-white font-bold">{selected.name}</h2>
                     {selected.sport && (
                       <p className="text-slate-400 text-xs">{selected.sport}</p>
+                    )}
+                    {selected.groupName && (
+                      <p className="text-primary text-xs mt-0.5">
+                        👥 Gruppo {selected.groupName} — programma condiviso
+                      </p>
                     )}
                   </div>
                   {selected.isActive && (

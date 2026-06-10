@@ -38,7 +38,6 @@ export default function LogDetailPage() {
     </div>
   );
 
-  const ai = log.aiAnalysis;
   const zones = log.cardioLog?.hrZoneMinutes;
   const totalZoneMin = zones
     ? Object.values(zones).reduce((s, v) => s + (v ?? 0), 0)
@@ -178,6 +177,69 @@ export default function LogDetailPage() {
         </div>
       )}
 
+      {/* ── Circuit log ── */}
+      {log.circuitLog && (
+        <div className="bg-slate-800 rounded-2xl p-4 border border-yellow-400/30 space-y-4">
+          <p className="text-xs font-semibold text-yellow-400 uppercase tracking-wider">Circuit</p>
+
+          <div className="flex gap-4 text-sm">
+            <div>
+              <p className="text-[10px] text-slate-500">Round completati</p>
+              <p className="text-xl font-bold text-white">{log.circuitLog.roundsCompleted}</p>
+            </div>
+            {log.circuitLog.restBetweenRoundsSeconds && (
+              <div>
+                <p className="text-[10px] text-slate-500">Recupero round</p>
+                <p className="text-xl font-bold text-white">
+                  {log.circuitLog.restBetweenRoundsSeconds >= 60
+                    ? `${log.circuitLog.restBetweenRoundsSeconds / 60}m`
+                    : `${log.circuitLog.restBetweenRoundsSeconds}s`}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {(log.circuitLog.avgHeartRate || log.circuitLog.maxHeartRate || log.circuitLog.calories) && (
+            <div className="grid grid-cols-2 gap-3 text-sm">
+              {log.circuitLog.avgHeartRate && <MetricRow icon="❤️" label="FC media" value={`${log.circuitLog.avgHeartRate} bpm`} />}
+              {log.circuitLog.maxHeartRate && <MetricRow icon="🔺" label="FC max" value={`${log.circuitLog.maxHeartRate} bpm`} />}
+              {log.circuitLog.calories && <MetricRow icon="🔥" label="Calorie" value={`${log.circuitLog.calories} kcal`} />}
+            </div>
+          )}
+
+          {log.circuitLog.hrZoneMinutes && (() => {
+            const z = log.circuitLog!.hrZoneMinutes!;
+            const total = Object.values(z).reduce((s, v) => s + (v ?? 0), 0);
+            if (!total) return null;
+            return (
+              <div>
+                <p className="text-xs text-slate-500 mb-2">Zone cardiache · {total} min</p>
+                <div className="flex rounded-lg overflow-hidden h-3 mb-2">
+                  {(["z1","z2","z3","z4","z5"] as const).map((k, idx) => {
+                    const min = z[k] ?? 0;
+                    if (!min) return null;
+                    return <div key={k} className={`${ZONE_COLOR[idx]} h-full`} style={{ width: `${(min / total) * 100}%` }} />;
+                  })}
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                  {(["z1","z2","z3","z4","z5"] as const).map((k, idx) => {
+                    const min = z[k];
+                    if (!min) return null;
+                    return (
+                      <div key={k} className="flex items-center gap-1.5 text-xs text-slate-400">
+                        <div className={`w-2 h-2 rounded-full ${ZONE_COLOR[idx]}`} />
+                        <span>{ZONE_LABEL[idx]}</span>
+                        <span className="ml-auto font-medium text-white">{min} min</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Notes */}
       {log.notes && (
         <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
@@ -186,77 +248,6 @@ export default function LogDetailPage() {
         </div>
       )}
 
-      {/* Garmin data */}
-      {log.garminData && (
-        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
-          <p className="text-xs font-semibold text-slate-400 mb-2">⌚ Dati Garmin</p>
-          <div className="grid grid-cols-2 gap-2 text-sm">
-            {log.garminData.avgHeartRate && (
-              <p className="text-slate-300">FC media: <span className="font-medium">{log.garminData.avgHeartRate} bpm</span></p>
-            )}
-            {log.garminData.calories && (
-              <p className="text-slate-300">Calorie: <span className="font-medium">{log.garminData.calories}</span></p>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* AI Analysis */}
-      {ai && (
-        <div className="space-y-3">
-          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Analisi AI ✨</p>
-
-          <div className="bg-primary/10 border border-primary/30 rounded-2xl p-4">
-            <p className="text-sm text-slate-200 leading-relaxed">{ai.summary}</p>
-          </div>
-
-          {ai.positives.length > 0 && (
-            <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-4">
-              <p className="text-xs font-semibold text-green-400 mb-2">✅ Punti positivi</p>
-              <ul className="space-y-1">
-                {ai.positives.map((p, i) => (
-                  <li key={i} className="text-sm text-slate-200 flex gap-2">
-                    <span className="text-slate-500 shrink-0">•</span><span>{p}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {ai.suggestions.length > 0 && (
-            <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-2xl p-4">
-              <p className="text-xs font-semibold text-yellow-400 mb-2">💡 Suggerimenti</p>
-              <ul className="space-y-1">
-                {ai.suggestions.map((s, i) => (
-                  <li key={i} className="text-sm text-slate-200 flex gap-2">
-                    <span className="text-slate-500 shrink-0">•</span><span>{s}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {ai.flags.length > 0 && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4">
-              <p className="text-xs font-semibold text-red-400 mb-2">⚠️ Attenzione</p>
-              <ul className="space-y-1">
-                {ai.flags.map((f, i) => (
-                  <li key={i} className="text-sm text-slate-200 flex gap-2">
-                    <span className="text-slate-500 shrink-0">•</span><span>{f}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          )}
-
-          {ai.nextSessionTip && (
-            <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
-              <p className="text-xs font-semibold text-slate-400 mb-1">💬 Prossima sessione</p>
-              <p className="text-sm text-slate-200">{ai.nextSessionTip}</p>
-            </div>
-          )}
-        </div>
-      )}
     </div>
   );
 }

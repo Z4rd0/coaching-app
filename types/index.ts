@@ -22,7 +22,6 @@ export interface Athlete {
   /** Firebase Auth UID of the athlete — set after they accept the invite */
   athleteUid?: string;
   status: "pending" | "invited" | "active" | "archived";
-  garminConnected: boolean;
   createdAt: Timestamp;
 }
 
@@ -64,12 +63,15 @@ export interface Session {
   /** Optional ISO date "YYYY-MM-DD" — when set, overrides dayOfWeek
    *  for scheduling. Lets the coach pin a session to a precise calendar day. */
   scheduledDate?: string;
-  type: "strength" | "cardio" | "mobility" | "rest" | "other";
+  type: "strength" | "cardio" | "mobility" | "rest" | "other" | "circuit";
   title: string;
   exercises: Exercise[];
   targetRPE: number; // 1-10
   durationMin: number;
   notes: string;
+  // Circuit-specific
+  targetRounds?: number;
+  restBetweenRoundsSeconds?: number;
 }
 
 export interface Week {
@@ -106,16 +108,43 @@ export interface AthleteProgram {
   status: "active" | "completed" | "paused";
 }
 
-// ─── Workout Log ──────────────────────────────────────────────────────────────
+// ─── Group ────────────────────────────────────────────────────────────────────
 
-export interface GarminData {
-  activityType: string;
-  distanceMeters?: number;
-  avgHeartRate?: number;
-  maxHeartRate?: number;
-  calories?: number;
-  avgPace?: string;
+/** Training group: a set of athletes who share the same programs */
+export interface Group {
+  id: string;
+  name: string;
+  sport: string;
+  description: string;
+  /** Athlete profile ids (/coaches/{coachId}/athletes/{athleteId}) */
+  memberIds: string[];
+  /** Firebase Auth UIDs of active members — read by security rules to authorize member access */
+  memberUids: string[];
+  /** All-time per-member totals for the leaderboard — updated server-side
+   *  by /api/group-feed on each shared log (avoids re-reading the whole feed) */
+  stats?: Record<string, { name: string; sessions: number; minutes: number }>;
+  createdAt: Timestamp;
 }
+
+/** Shared program in a group — single document, all members see live updates */
+export type GroupProgram = AthleteProgram;
+
+/** Fase 2 ("gara"): lightweight copy of a member's log, visible to the whole group */
+export interface GroupFeedEntry {
+  id: string;
+  athleteId: string;
+  athleteUid: string;
+  athleteName: string;
+  logId: string;
+  date: Timestamp;
+  sessionTitle?: string;
+  sessionType?: Session["type"];
+  actualDurationMin: number;
+  perceivedRPE: number;
+  createdAt: Timestamp;
+}
+
+// ─── Workout Log ──────────────────────────────────────────────────────────────
 
 export interface ExerciseLog {
   name: string;
@@ -144,6 +173,21 @@ export interface CardioLog {
   };
 }
 
+export interface CircuitLog {
+  roundsCompleted: number;
+  restBetweenRoundsSeconds?: number;
+  avgHeartRate?: number;
+  maxHeartRate?: number;
+  calories?: number;
+  hrZoneMinutes?: {
+    z1?: number;
+    z2?: number;
+    z3?: number;
+    z4?: number;
+    z5?: number;
+  };
+}
+
 export interface AIAnalysis {
   summary: string;
   positives: string[];
@@ -156,6 +200,8 @@ export interface WorkoutLog {
   id: string;
   date: Timestamp;
   programId?: string;
+  /** Set when the logged session belongs to a group program */
+  groupId?: string;
   sessionRef?: {
     cycleNumber: number;
     weekNumber: number;
@@ -169,8 +215,10 @@ export interface WorkoutLog {
   notes: string;
   exerciseLogs?: ExerciseLog[];
   cardioLog?: CardioLog;
-  garminActivityId?: string;
-  garminData?: GarminData;
+  circuitLog?: CircuitLog;
+  /** Feedback written by the coach on this workout — shown to the athlete */
+  coachComment?: string;
+  /** Legacy: old logs may carry an AI analysis from the removed feature */
   aiAnalysis?: AIAnalysis;
   writtenBy?: "coach" | "athlete";
   createdAt: Timestamp;
@@ -186,6 +234,7 @@ export const SESSION_TYPE_LABELS: Record<SessionType, string> = {
   mobility: "Mobilità",
   rest: "Riposo",
   other: "Altro",
+  circuit: "Circuit",
 };
 
 export const MOOD_LABELS: Record<number, string> = {

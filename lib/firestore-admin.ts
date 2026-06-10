@@ -23,15 +23,6 @@ export async function adminGetLogs(
   return snap.docs.map((d) => ({ id: d.id, ...d.data() } as unknown as WorkoutLog));
 }
 
-export async function adminUpdateLogAI(
-  coachId: string,
-  athleteId: string,
-  logId: string,
-  aiAnalysis: WorkoutLog["aiAnalysis"]
-): Promise<void> {
-  await logsCollection(coachId, athleteId).doc(logId).update({ aiAnalysis });
-}
-
 // ─── Paths ────────────────────────────────────────────────────────────────────
 
 const coachDoc = (coachId: string) => db().collection("coaches").doc(coachId);
@@ -85,6 +76,28 @@ export async function adminActivateAthlete(
   });
   const access: AthleteAccess = { coachId, athleteId, name, email };
   await athleteAccessDoc(athleteUid).set(access);
+}
+
+// ─── Groups ───────────────────────────────────────────────────────────────────
+
+/**
+ * Add the athlete's auth UID to every group they were pre-added to while
+ * still pending — memberUids is what security rules check for member access.
+ */
+export async function adminSyncGroupMembership(
+  coachId: string,
+  athleteId: string,
+  athleteUid: string
+): Promise<void> {
+  const snap = await coachDoc(coachId)
+    .collection("groups")
+    .where("memberIds", "array-contains", athleteId)
+    .get();
+  await Promise.all(
+    snap.docs.map((d) =>
+      d.ref.update({ memberUids: FieldValue.arrayUnion(athleteUid) })
+    )
+  );
 }
 
 // ─── Invites ──────────────────────────────────────────────────────────────────

@@ -1,11 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Timestamp } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import { getActiveProgram, getTodaySession, createLog } from "@/lib/firestore";
-import type { Program, Session, WorkoutLog, ExerciseLog, CardioLog } from "@/types";
+import type { Program, Session, WorkoutLog, ExerciseLog, CardioLog, CircuitLog } from "@/types";
 import { MOOD_LABELS, ENERGY_LABELS, SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
@@ -54,9 +54,13 @@ const emptyCardioLog = (): CardioLog => ({
 export default function LogPage() {
   const { user } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   const [program, setProgram] = useState<Program | null>(null);
   const [todaySession, setTodaySession] = useState<Session | null>(null);
+  const [logDate, setLogDate] = useState<string>(
+    searchParams.get("date") ?? new Date().toISOString().slice(0, 10)
+  );
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -78,26 +82,59 @@ export default function LogPage() {
   const [cardioLog, setCardioLog] = useState<CardioLog>(emptyCardioLog());
   const [distanceKm, setDistanceKm] = useState("");
 
+  // Circuit
+  const [circuitLog, setCircuitLog] = useState<CircuitLog>({ roundsCompleted: 1 });
+
+  // Rest timer
+  const [activeTimer, setActiveTimer] = useState<{ label: string; remaining: number; total: number } | null>(null);
+
   useEffect(() => {
     if (!user) return;
     getActiveProgram(user.uid).then((prog) => {
       setProgram(prog);
       if (prog) {
-        const s = getTodaySession(prog);
+        const s = getTodaySession(prog, new Date(logDate + "T12:00:00"));
         setTodaySession(s);
-        if (s && s.exercises.length > 0) {
-          setExerciseLogs(initExerciseLogs(s));
-        }
+        if (s && s.exercises.length > 0) setExerciseLogs(initExerciseLogs(s));
         if (s) setDurationMin(s.durationMin);
       }
       setLoading(false);
     });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
+
+  useEffect(() => {
+    if (!program) return;
+    const s = getTodaySession(program, new Date(logDate + "T12:00:00"));
+    setTodaySession(s);
+    if (s && s.exercises.length > 0) setExerciseLogs(initExerciseLogs(s));
+    else setExerciseLogs([]);
+    if (s) setDurationMin(s.durationMin);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logDate]);
+
+  // Rest timer countdown
+  useEffect(() => {
+    if (!activeTimer) return;
+    if (activeTimer.remaining <= 0) {
+      if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate([200, 100, 200]);
+      const t = setTimeout(() => setActiveTimer(null), 3000);
+      return () => clearTimeout(t);
+    }
+    const interval = setInterval(() => {
+      setActiveTimer((prev) => prev ? { ...prev, remaining: prev.remaining - 1 } : null);
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [activeTimer?.remaining]);
+
+  const startTimer = (seconds: number, label: string) =>
+    setActiveTimer({ label, remaining: seconds, total: seconds });
 
   // Which mode are we in?
   const sessionType = todaySession?.type ?? freeType;
   const showStrength = isStrengthType(sessionType) && (todaySession?.exercises.length ?? 0) > 0;
   const showCardio = isCardioType(sessionType);
+  const showCircuit = sessionType === "circuit";
 
   // Update a single exercise log field
   const updateExLog = (i: number, patch: Partial<ExerciseLog>) =>
@@ -130,10 +167,12 @@ export default function LogPage() {
         distanceMeters: distanceKm ? Math.round(parseFloat(distanceKm) * 1000) : undefined,
       } : undefined;
 
-      const hasExerciseLogs = showStrength && exerciseLogs.length > 0;
+      const hasExerciseLogs = (showStrength || showCircuit) && exerciseLogs.length > 0;
+
+      const finalCircuit: CircuitLog | undefined = showCircuit ? circuitLog : undefined;
 
       const logData: Omit<WorkoutLog, "id" | "createdAt"> = {
-        date: Timestamp.now(),
+        date: Timestamp.fromDate(new Date(logDate + "T12:00:00")),
         ...(program?.id ? { programId: program.id } : {}),
         ...(todaySession ? { plannedSession: todaySession } : {}),
         actualDurationMin: durationMin,
@@ -143,24 +182,12 @@ export default function LogPage() {
         notes,
         ...(hasExerciseLogs ? { exerciseLogs } : {}),
         ...(finalCardio ? { cardioLog: finalCardio } : {}),
+        ...(finalCircuit ? { circuitLog: finalCircuit } : {}),
       };
 
       const docRef = await createLog(user.uid, user.uid, logData);
 
-      // Fire-and-forget AI analysis
-      fetch("/api/ai-feedback", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          coachId: user.uid,
-          athleteId: user.uid,
-          logId: docRef.id,
-          plannedSession: todaySession,
-          logData,
-        }),
-      });
-
-      router.push(`/log/feedback/${docRef.id}`);
+      router.push(`/history/${docRef.id}`);
     } catch (err: unknown) {
       console.error("createLog error:", err);
       const msg = err instanceof Error ? err.message : String(err);
@@ -188,6 +215,18 @@ export default function LogPage() {
 
       <form onSubmit={handleSubmit} className="space-y-5">
 
+        {/* ── Date picker ── */}
+        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
+          <label className="block text-xs text-slate-400 mb-1.5">Data allenamento</label>
+          <input
+            type="date"
+            value={logDate}
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => setLogDate(e.target.value)}
+            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </div>
+
         {/* ── Free session type toggle ── */}
         {!todaySession && (
           <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
@@ -213,77 +252,147 @@ export default function LogPage() {
         {showStrength && (
           <div className="space-y-3">
             <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Esercizi</p>
-            {exerciseLogs.map((ex, i) => (
-              <div key={i} className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
-                {/* Exercise header */}
-                <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
-                  <span className="text-sm font-semibold text-white">{ex.name}</span>
-                  <span className="text-xs text-slate-500">
-                    prev. {ex.plannedSets}×{ex.plannedReps}
-                    {ex.plannedLoad ? ` @ ${ex.plannedLoad}` : ""}
-                  </span>
+            {exerciseLogs.map((ex, i) => {
+              const restSec = todaySession?.exercises[i]?.restSeconds;
+              return (
+                <div key={i} className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
+                  <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
+                    <span className="text-sm font-semibold text-white">{ex.name}</span>
+                    <span className="text-xs text-slate-500">
+                      prev. {ex.plannedSets}×{ex.plannedReps}
+                      {ex.plannedLoad ? ` @ ${ex.plannedLoad}` : ""}
+                    </span>
+                  </div>
+                  <div className="px-4 py-3 space-y-3">
+                    <div className="grid grid-cols-3 gap-2">
+                      <Field label="Serie effettive">
+                        <input type="number" min={0} value={ex.actualSets ?? ""} onChange={(e) => updateExLog(i, { actualSets: e.target.value ? +e.target.value : undefined })} className={inputCls} />
+                      </Field>
+                      <Field label="Reps">
+                        <input value={ex.actualReps ?? ""} onChange={(e) => updateExLog(i, { actualReps: e.target.value })} placeholder="es. 8,7,7" className={inputCls} />
+                      </Field>
+                      <Field label="Carico">
+                        <input value={ex.actualLoad ?? ""} onChange={(e) => updateExLog(i, { actualLoad: e.target.value })} placeholder="es. 80kg" className={inputCls} />
+                      </Field>
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className={labelCls + " mb-0"}>RPE esercizio</label>
+                        <span className="text-sm font-bold text-primary">{ex.rpe ?? "—"}</span>
+                      </div>
+                      <input type="range" min={1} max={10} step={1} value={ex.rpe ?? 5} onChange={(e) => updateExLog(i, { rpe: +e.target.value })} onMouseDown={() => { if (!ex.rpe) updateExLog(i, { rpe: 5 }); }} className="w-full accent-primary" />
+                      <div className="flex justify-between text-[10px] text-slate-600 -mt-0.5">
+                        {[1,2,3,4,5,6,7,8,9,10].map(n => <span key={n}>{n}</span>)}
+                      </div>
+                    </div>
+                    <div>
+                      <label className={labelCls}>Note (opzionale)</label>
+                      <input value={ex.notes ?? ""} onChange={(e) => updateExLog(i, { notes: e.target.value })} placeholder="Difficoltà, sensazioni, tecnica…" className={inputCls} />
+                    </div>
+                    {/* Rest timer button */}
+                    {restSec && (
+                      <button
+                        type="button"
+                        onClick={() => startTimer(restSec, ex.name)}
+                        className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-slate-600 text-slate-300 text-sm hover:border-primary hover:text-primary transition-colors"
+                      >
+                        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <circle cx="12" cy="12" r="9" /><path strokeLinecap="round" d="M12 7v5l3 3" />
+                        </svg>
+                        Avvia recupero · {restSec >= 60 ? `${restSec / 60}m` : `${restSec}s`}
+                      </button>
+                    )}
+                  </div>
                 </div>
+              );
+            })}
+          </div>
+        )}
 
-                <div className="px-4 py-3 space-y-3">
-                  {/* Actual metrics */}
-                  <div className="grid grid-cols-3 gap-2">
-                    <Field label="Serie effettive">
-                      <input
-                        type="number" min={0}
-                        value={ex.actualSets ?? ""}
-                        onChange={(e) => updateExLog(i, { actualSets: e.target.value ? +e.target.value : undefined })}
-                        className={inputCls}
-                      />
-                    </Field>
-                    <Field label="Reps">
-                      <input
-                        value={ex.actualReps ?? ""}
-                        onChange={(e) => updateExLog(i, { actualReps: e.target.value })}
-                        placeholder="es. 8,7,7"
-                        className={inputCls}
-                      />
-                    </Field>
-                    <Field label="Carico">
-                      <input
-                        value={ex.actualLoad ?? ""}
-                        onChange={(e) => updateExLog(i, { actualLoad: e.target.value })}
-                        placeholder="es. 80kg"
-                        className={inputCls}
-                      />
-                    </Field>
-                  </div>
+        {/* ── Circuit mode ── */}
+        {showCircuit && (
+          <div className="space-y-3">
+            {/* Round counter */}
+            <div className="bg-slate-800 rounded-2xl p-4 border border-yellow-400/30">
+              <div className="flex items-center justify-between mb-3">
+                <label className="text-sm font-semibold text-white">
+                  Round completati
+                  {todaySession?.targetRounds && <span className="text-xs text-slate-400 font-normal ml-2">(target: {todaySession.targetRounds})</span>}
+                </label>
+                <span className="text-xl font-bold text-yellow-400">{circuitLog.roundsCompleted}</span>
+              </div>
+              <input type="range" min={1} max={20} step={1} value={circuitLog.roundsCompleted} onChange={(e) => setCircuitLog((p) => ({ ...p, roundsCompleted: +e.target.value }))} className="w-full accent-yellow-400" />
+              <div className="flex justify-between text-xs text-slate-500 mt-1"><span>1</span><span>10</span><span>20</span></div>
+            </div>
 
-                  {/* RPE per exercise */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className={labelCls + " mb-0"}>RPE esercizio</label>
-                      <span className="text-sm font-bold text-primary">{ex.rpe ?? "—"}</span>
+            {/* Exercises per round */}
+            {exerciseLogs.length > 0 && (
+              <div className="space-y-2">
+                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Esercizi del circuit</p>
+                {exerciseLogs.map((ex, i) => (
+                  <div key={i} className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
+                    <div className="px-4 py-2.5 border-b border-slate-700 flex items-center justify-between">
+                      <span className="text-sm font-semibold text-white">{ex.name}</span>
+                      <span className="text-xs text-slate-500">{ex.plannedReps} reps{ex.plannedLoad ? ` · ${ex.plannedLoad}` : ""}</span>
                     </div>
-                    <input
-                      type="range" min={1} max={10} step={1}
-                      value={ex.rpe ?? 5}
-                      onChange={(e) => updateExLog(i, { rpe: +e.target.value })}
-                      onMouseDown={() => { if (!ex.rpe) updateExLog(i, { rpe: 5 }); }}
-                      className="w-full accent-primary"
-                    />
-                    <div className="flex justify-between text-[10px] text-slate-600 -mt-0.5">
-                      {[1,2,3,4,5,6,7,8,9,10].map(n => <span key={n}>{n}</span>)}
+                    <div className="px-4 py-3 grid grid-cols-2 gap-2">
+                      <Field label="Reps effettive">
+                        <input value={ex.actualReps ?? ""} onChange={(e) => updateExLog(i, { actualReps: e.target.value })} placeholder={ex.plannedReps} className={inputCls} />
+                      </Field>
+                      <Field label="Carico">
+                        <input value={ex.actualLoad ?? ""} onChange={(e) => updateExLog(i, { actualLoad: e.target.value })} placeholder={ex.plannedLoad || "—"} className={inputCls} />
+                      </Field>
                     </div>
                   </div>
+                ))}
+              </div>
+            )}
 
-                  {/* Exercise notes */}
-                  <div>
-                    <label className={labelCls}>Note (opzionale)</label>
-                    <input
-                      value={ex.notes ?? ""}
-                      onChange={(e) => updateExLog(i, { notes: e.target.value })}
-                      placeholder="Difficoltà, sensazioni, tecnica…"
-                      className={inputCls}
-                    />
-                  </div>
+            {/* Recupero tra round + timer */}
+            <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-3">
+              <Field label="Recupero effettivo tra round (sec)">
+                <input type="number" min={0} value={circuitLog.restBetweenRoundsSeconds ?? ""} onChange={(e) => setCircuitLog((p) => ({ ...p, restBetweenRoundsSeconds: e.target.value ? +e.target.value : undefined }))} placeholder={todaySession?.restBetweenRoundsSeconds?.toString() ?? "90"} className={inputCls} />
+              </Field>
+              {(circuitLog.restBetweenRoundsSeconds ?? todaySession?.restBetweenRoundsSeconds) && (
+                <button
+                  type="button"
+                  onClick={() => startTimer(circuitLog.restBetweenRoundsSeconds ?? todaySession?.restBetweenRoundsSeconds ?? 90, "Recupero round")}
+                  className="w-full flex items-center justify-center gap-2 py-2 rounded-xl border border-yellow-400/40 text-yellow-400 text-sm hover:bg-yellow-400/10 transition-colors"
+                >
+                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <circle cx="12" cy="12" r="9" /><path strokeLinecap="round" d="M12 7v5l3 3" />
+                  </svg>
+                  Avvia recupero round
+                </button>
+              )}
+            </div>
+
+            {/* HR / calories for circuit */}
+            <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-3">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Metriche cardio</p>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="FC media (bpm)">
+                  <input type="number" min={0} value={circuitLog.avgHeartRate ?? ""} onChange={(e) => setCircuitLog((p) => ({ ...p, avgHeartRate: e.target.value ? +e.target.value : undefined }))} placeholder="150" className={inputCls} />
+                </Field>
+                <Field label="FC max (bpm)">
+                  <input type="number" min={0} value={circuitLog.maxHeartRate ?? ""} onChange={(e) => setCircuitLog((p) => ({ ...p, maxHeartRate: e.target.value ? +e.target.value : undefined }))} placeholder="178" className={inputCls} />
+                </Field>
+                <Field label="Calorie">
+                  <input type="number" min={0} value={circuitLog.calories ?? ""} onChange={(e) => setCircuitLog((p) => ({ ...p, calories: e.target.value ? +e.target.value : undefined }))} placeholder="380" className={inputCls} />
+                </Field>
+              </div>
+              <div>
+                <label className={labelCls}>Minuti per zona</label>
+                <div className="grid grid-cols-5 gap-1.5">
+                  {(["z1","z2","z3","z4","z5"] as const).map((z, idx) => (
+                    <div key={z} className="text-center">
+                      <div className={`text-[10px] font-semibold mb-1 ${["text-blue-400","text-green-400","text-yellow-400","text-orange-400","text-red-400"][idx]}`}>Z{idx+1}</div>
+                      <input type="number" min={0} value={circuitLog.hrZoneMinutes?.[z] ?? ""} onChange={(e) => setCircuitLog((p) => ({ ...p, hrZoneMinutes: { ...p.hrZoneMinutes, [z]: e.target.value ? +e.target.value : undefined } }))} placeholder="0" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-1 py-2 text-sm text-white text-center placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-primary" />
+                    </div>
+                  ))}
                 </div>
               </div>
-            ))}
+            </div>
           </div>
         )}
 
@@ -450,9 +559,46 @@ export default function LogPage() {
           disabled={saving}
           className="w-full bg-primary hover:bg-primary-600 disabled:opacity-60 text-white font-bold py-4 rounded-2xl text-base transition-colors"
         >
-          {saving ? "Salvataggio…" : "Salva e analizza con AI ✨"}
+          {saving ? "Salvataggio…" : "Salva allenamento"}
         </button>
       </form>
+
+      {/* ── Rest timer overlay ── */}
+      {activeTimer && (
+        <div className={`fixed bottom-20 left-4 right-4 z-50 rounded-2xl p-4 shadow-2xl border transition-all ${
+          activeTimer.remaining === 0
+            ? "bg-green-600/20 border-green-500/40"
+            : "bg-slate-800 border-primary/40"
+        }`}>
+          {activeTimer.remaining === 0 ? (
+            <p className="text-green-400 font-bold text-center text-base">✓ Recupero completato!</p>
+          ) : (
+            <>
+              <div className="flex items-center justify-between mb-3">
+                <div>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide">{activeTimer.label}</p>
+                  <p className="text-3xl font-bold text-white tabular-nums leading-none">
+                    {String(Math.floor(activeTimer.remaining / 60)).padStart(2, "0")}:{String(activeTimer.remaining % 60).padStart(2, "0")}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTimer(null)}
+                  className="text-slate-400 text-sm px-3 py-1.5 border border-slate-600 rounded-lg hover:text-white"
+                >
+                  Salta
+                </button>
+              </div>
+              <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                <div
+                  className="h-full bg-primary rounded-full transition-all duration-1000"
+                  style={{ width: `${(activeTimer.remaining / activeTimer.total) * 100}%` }}
+                />
+              </div>
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

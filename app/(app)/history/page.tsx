@@ -4,9 +4,13 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { format, subDays, startOfWeek } from "date-fns";
 import { it } from "date-fns/locale";
-import {
-  LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid,
-} from "recharts";
+import dynamic from "next/dynamic";
+
+// recharts pesa ~100kB: caricato solo quando il grafico è visibile
+const RPEChart = dynamic(() => import("@/components/RPEChart"), {
+  ssr: false,
+  loading: () => <div className="h-[160px] animate-pulse bg-slate-700/30 rounded-xl" />,
+});
 import { useAuth } from "@/contexts/AuthContext";
 import { getLogs, getPrograms } from "@/lib/firestore";
 import type { WorkoutLog, Program } from "@/types";
@@ -85,34 +89,7 @@ export default function HistoryPage() {
                 Trend RPE
               </h2>
               <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
-                <ResponsiveContainer width="100%" height={160}>
-                  <LineChart data={chartData} margin={{ top: 5, right: 5, bottom: 0, left: -20 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
-                    <XAxis dataKey="date" tick={{ fill: "#94a3b8", fontSize: 10 }} />
-                    <YAxis domain={[1, 10]} tick={{ fill: "#94a3b8", fontSize: 10 }} />
-                    <Tooltip
-                      contentStyle={{ background: "#1e293b", border: "1px solid #334155", borderRadius: 8 }}
-                      labelStyle={{ color: "#94a3b8" }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="rpe"
-                      stroke="#1D9E75"
-                      strokeWidth={2}
-                      dot={{ fill: "#1D9E75", r: 3 }}
-                      name="RPE effettivo"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="target"
-                      stroke="#64748b"
-                      strokeWidth={1.5}
-                      strokeDasharray="4 4"
-                      dot={false}
-                      name="Target"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
+                <RPEChart data={chartData} />
                 <div className="flex gap-4 mt-2 justify-center">
                   <span className="flex items-center gap-1 text-xs text-slate-400">
                     <span className="w-3 h-0.5 bg-primary inline-block" /> RPE effettivo
@@ -186,9 +163,6 @@ export default function HistoryPage() {
                   </p>
                 </div>
                 <div className="text-right shrink-0">
-                  {log.aiAnalysis && (
-                    <span className="text-xs bg-primary/20 text-primary-300 px-2 py-0.5 rounded-full block mb-1">AI</span>
-                  )}
                   <svg className="w-4 h-4 text-slate-500 ml-auto" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                   </svg>

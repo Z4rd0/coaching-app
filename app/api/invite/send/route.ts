@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
 import { adminGetCoach, adminCreateAthlete, adminCreateInvite } from "@/lib/firestore-admin";
+import { verifyRequestAuth } from "@/lib/server-auth";
 
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY);
@@ -11,6 +12,12 @@ export async function POST(req: NextRequest) {
 
     if (!coachId || !name || !email) {
       return NextResponse.json({ error: "Parametri mancanti" }, { status: 400 });
+    }
+
+    // Only the coach themselves can invite athletes under their account
+    const caller = await verifyRequestAuth(req);
+    if (!caller || caller.uid !== coachId) {
+      return NextResponse.json({ error: "Non autorizzato" }, { status: 401 });
     }
 
     // 1. Get coach info for the email
@@ -27,7 +34,6 @@ export async function POST(req: NextRequest) {
       goals: goals ?? "",
       notes: notes ?? "",
       status: "invited",
-      garminConnected: false,
     });
 
     // 3. Create invite record — the document ID is used as the token

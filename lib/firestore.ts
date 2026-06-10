@@ -13,6 +13,9 @@ import {
   limit,
   Timestamp,
   DocumentReference,
+  arrayUnion,
+  arrayRemove,
+  getCountFromServer,
 } from "firebase/firestore";
 import { getFirebaseDb } from "./firebase";
 import type {
@@ -20,6 +23,9 @@ import type {
   Athlete,
   AthleteAccess,
   AthleteProgram,
+  Group,
+  GroupProgram,
+  GroupFeedEntry,
   Invite,
   Program,
   WorkoutLog,
@@ -87,6 +93,22 @@ export const invitesRef = (coachId: string) =>
 export const inviteRef = (coachId: string, inviteId: string) =>
   doc(db(), "coaches", coachId, "invites", inviteId);
 
+// Groups
+export const groupsRef = (coachId: string) =>
+  collection(db(), "coaches", coachId, "groups");
+export const groupRef = (coachId: string, groupId: string) =>
+  doc(db(), "coaches", coachId, "groups", groupId);
+
+// Group programs (shared — single copy for all members)
+export const groupProgramsRef = (coachId: string, groupId: string) =>
+  collection(db(), "coaches", coachId, "groups", groupId, "programs");
+export const groupProgramRef = (coachId: string, groupId: string, programId: string) =>
+  doc(db(), "coaches", coachId, "groups", groupId, "programs", programId);
+
+// Group feed (fase 2 — shared log entries for the "gara")
+export const groupFeedRef = (coachId: string, groupId: string) =>
+  collection(db(), "coaches", coachId, "groups", groupId, "feed");
+
 // AthleteAccess — global lookup for security rules
 export const athleteAccessRef = (athleteUid: string) =>
   doc(db(), "athleteAccess", athleteUid);
@@ -139,13 +161,6 @@ export async function updateAthlete(
   data: Partial<Omit<Athlete, "id" | "createdAt">>
 ): Promise<void> {
   await updateDoc(athleteRef(coachId, athleteId), stripUndefined(data));
-}
-
-export async function deleteAthlete(
-  coachId: string,
-  athleteId: string
-): Promise<void> {
-  await deleteDoc(athleteRef(coachId, athleteId));
 }
 
 /** Link Firebase Auth UID to athlete and create the global access document */
@@ -297,6 +312,179 @@ export async function getActiveAthleteProgram(
   return { id: snap.docs[0].id, ...snap.docs[0].data() } as AthleteProgram;
 }
 
+// ─── Groups ───────────────────────────────────────────────────────────────────
+
+export async function getGroups(coachId: string): Promise<Group[]> {
+  const snap = await getDocs(
+    query(groupsRef(coachId), orderBy("createdAt", "desc"))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Group));
+}
+
+export async function getGroup(coachId: string, groupId: string): Promise<Group | null> {
+  const snap = await getDoc(groupRef(coachId, groupId));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as Group;
+}
+
+export async function createGroup(
+  coachId: string,
+  data: Omit<Group, "id" | "createdAt">
+): Promise<DocumentReference> {
+  return addDoc(groupsRef(coachId), stripUndefined({
+    ...data,
+    createdAt: Timestamp.now(),
+  }));
+}
+
+export async function updateGroup(
+  coachId: string,
+  groupId: string,
+  data: Partial<Omit<Group, "id" | "createdAt">>
+): Promise<void> {
+  await updateDoc(groupRef(coachId, groupId), stripUndefined(data));
+}
+
+export async function addAthleteToGroup(
+  coachId: string,
+  groupId: string,
+  athlete: Athlete
+): Promise<void> {
+  await updateDoc(groupRef(coachId, groupId), {
+    memberIds: arrayUnion(athlete.id),
+    // memberUids authorizes member reads via security rules — only active
+    // athletes have an auth UID; pending ones are synced on invite accept
+    ...(athlete.athleteUid ? { memberUids: arrayUnion(athlete.athleteUid) } : {}),
+  });
+}
+
+export async function removeAthleteFromGroup(
+  coachId: string,
+  groupId: string,
+  athlete: Athlete
+): Promise<void> {
+  await updateDoc(groupRef(coachId, groupId), {
+    memberIds: arrayRemove(athlete.id),
+    ...(athlete.athleteUid ? { memberUids: arrayRemove(athlete.athleteUid) } : {}),
+  });
+}
+
+/** Athlete side: groups the logged-in athlete belongs to */
+export async function getGroupsForAthlete(
+  coachId: string,
+  athleteUid: string
+): Promise<Group[]> {
+  const snap = await getDocs(
+    query(groupsRef(coachId), where("memberUids", "array-contains", athleteUid))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as Group));
+}
+
+// ─── Group Programs (shared) ──────────────────────────────────────────────────
+
+export async function getGroupPrograms(
+  coachId: string,
+  groupId: string
+): Promise<GroupProgram[]> {
+  const snap = await getDocs(
+    query(groupProgramsRef(coachId, groupId), orderBy("createdAt", "desc"))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as GroupProgram));
+}
+
+export async function getGroupProgram(
+  coachId: string,
+  groupId: string,
+  programId: string
+): Promise<GroupProgram | null> {
+  const snap = await getDoc(groupProgramRef(coachId, groupId, programId));
+  if (!snap.exists()) return null;
+  return { id: snap.id, ...snap.data() } as GroupProgram;
+}
+
+export async function createGroupProgram(
+  coachId: string,
+  groupId: string,
+  data: Omit<GroupProgram, "id" | "createdAt">
+): Promise<DocumentReference> {
+  return addDoc(groupProgramsRef(coachId, groupId), stripUndefined({
+    ...data,
+    createdAt: Timestamp.now(),
+  }));
+}
+
+export async function updateGroupProgram(
+  coachId: string,
+  groupId: string,
+  programId: string,
+  data: Partial<Omit<GroupProgram, "id" | "createdAt">>
+): Promise<void> {
+  await updateDoc(groupProgramRef(coachId, groupId, programId), stripUndefined(data));
+}
+
+export async function deleteGroupProgram(
+  coachId: string,
+  groupId: string,
+  programId: string
+): Promise<void> {
+  await deleteDoc(groupProgramRef(coachId, groupId, programId));
+}
+
+/** Copy a coach library program into a group (shared — not per-athlete) */
+export async function copyProgramToGroup(
+  coachId: string,
+  groupId: string,
+  sourceProgram: Program
+): Promise<DocumentReference> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { id, createdAt: _createdAt, ...rest } = sourceProgram;
+  return createGroupProgram(coachId, groupId, {
+    ...rest,
+    sourceTemplateId: id,
+    status: "active",
+  });
+}
+
+export async function setActiveGroupProgram(
+  coachId: string,
+  groupId: string,
+  programId: string
+): Promise<void> {
+  const all = await getDocs(groupProgramsRef(coachId, groupId));
+  await Promise.all(all.docs.map((d) => updateDoc(d.ref, { isActive: false })));
+  await updateDoc(groupProgramRef(coachId, groupId, programId), { isActive: true });
+}
+
+export async function getActiveGroupProgram(
+  coachId: string,
+  groupId: string
+): Promise<GroupProgram | null> {
+  const snap = await getDocs(
+    query(
+      groupProgramsRef(coachId, groupId),
+      where("isActive", "==", true),
+      limit(1)
+    )
+  );
+  if (snap.empty) return null;
+  return { id: snap.docs[0].id, ...snap.docs[0].data() } as GroupProgram;
+}
+
+// ─── Group Feed (fase 2 "gara") ───────────────────────────────────────────────
+// Writes happen server-side in /api/group-feed (anti-cheating + aggregate
+// stats); the client only reads the recent entries for display.
+
+export async function getGroupFeed(
+  coachId: string,
+  groupId: string,
+  limitCount = 30
+): Promise<GroupFeedEntry[]> {
+  const snap = await getDocs(
+    query(groupFeedRef(coachId, groupId), orderBy("date", "desc"), limit(limitCount))
+  );
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() } as GroupFeedEntry));
+}
+
 // ─── Coach library programs ───────────────────────────────────────────────────
 
 export async function getPrograms(coachId: string): Promise<Program[]> {
@@ -380,19 +568,48 @@ export async function createLog(
   }));
 }
 
-export async function updateLogAI(
+/** Coach feedback on a single workout log */
+export async function updateLogComment(
   coachId: string,
   athleteId: string,
   logId: string,
-  aiAnalysis: WorkoutLog["aiAnalysis"]
+  coachComment: string
 ): Promise<void> {
-  await updateDoc(logRef(coachId, athleteId, logId), { aiAnalysis });
+  await updateDoc(logRef(coachId, athleteId, logId), { coachComment });
+}
+
+// ─── Adherence (coach dashboard) ──────────────────────────────────────────────
+
+export interface AthleteAdherence {
+  athlete: Athlete;
+  /** Logged sessions in the last 7 days (count aggregation — 1 read per athlete) */
+  weekSessions: number;
+  lastLogDate: Date | null;
+}
+
+export async function getAthletesAdherence(coachId: string): Promise<AthleteAdherence[]> {
+  const athletes = (await getAthletes(coachId)).filter((a) => a.status === "active");
+  const weekAgo = Timestamp.fromDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+  return Promise.all(
+    athletes.map(async (athlete) => {
+      const [countSnap, lastSnap] = await Promise.all([
+        getCountFromServer(
+          query(logsRef(coachId, athlete.id), where("date", ">=", weekAgo))
+        ),
+        getDocs(query(logsRef(coachId, athlete.id), orderBy("date", "desc"), limit(1))),
+      ]);
+      const last = lastSnap.empty
+        ? null
+        : (lastSnap.docs[0].data().date as Timestamp).toDate();
+      return { athlete, weekSessions: countSnap.data().count, lastLogDate: last };
+    })
+  );
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-export function getTodaySession(program: Program | AthleteProgram): Session | null {
-  const today = new Date();
+export function getTodaySession(program: Program | AthleteProgram, forDate?: Date): Session | null {
+  const today = forDate ? new Date(forDate) : new Date();
   today.setHours(0, 0, 0, 0);
   const todayISO = today.toISOString().slice(0, 10);
 

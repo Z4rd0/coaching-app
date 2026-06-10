@@ -108,7 +108,12 @@ export default function ImportProgramPage() {
     try {
       const formData = new FormData();
       formData.append("file", file);
-      const res = await fetch("/api/import-program", { method: "POST", body: formData });
+      const idToken = await user?.getIdToken();
+      const res = await fetch("/api/import-program", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${idToken}` },
+        body: formData,
+      });
       const data = await res.json();
       if (!res.ok || !data.success) {
         setError(data.error || "Errore nell'analisi");

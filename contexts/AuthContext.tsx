@@ -5,6 +5,8 @@ import {
   User,
   signInWithEmailAndPassword,
   createUserWithEmailAndPassword,
+  signInWithPopup,
+  GoogleAuthProvider,
   signOut as firebaseSignOut,
   onAuthStateChanged,
 } from "firebase/auth";
@@ -22,6 +24,7 @@ interface AuthContextValue {
   loading: boolean;
   signIn: (email: string, password: string) => Promise<UserRole>;
   signUp: (name: string, email: string, password: string) => Promise<void>;
+  signInWithGoogle: () => Promise<UserRole>;
   signOut: () => Promise<void>;
 }
 
@@ -68,6 +71,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (accessData) {
               setAthleteAccess(accessData);
               setRole("athlete");
+            } else if (
+              typeof window !== "undefined" &&
+              (window.location.pathname.startsWith("/join") ||
+                window.location.pathname.startsWith("/invite"))
+            ) {
+              // On join/invite pages a brand-new signup is an athlete whose
+              // access doc is being written by the join flow right now —
+              // self-healing here would race it and create a coach doc,
+              // locking the account into the wrong role. Leave role null.
+              setRole(null);
             } else {
               // Neither coach nor athlete — self-heal: this user authenticated
               // but has no coach doc (likely created during an earlier offline
@@ -117,6 +130,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRole("coach");
   };
 
+  /** Google sign-in: existing users keep their role; brand-new users become coaches
+   *  (athletes get their access doc via the join/invite flow instead). */
+  const signInWithGoogle = async (): Promise<UserRole> => {
+    const cred = await signInWithPopup(getFirebaseAuth(), new GoogleAuthProvider());
+    let coachData = await firestoreRead(() => getCoach(cred.user.uid));
+    if (coachData) {
+      setCoach(coachData);
+      setRole("coach");
+      return "coach";
+    }
+    const accessData = await firestoreRead(() => getAthleteAccessByUid(cred.user.uid));
+    if (accessData) {
+      setAthleteAccess(accessData);
+      setRole("athlete");
+      return "athlete";
+    }
+    const name = cred.user.displayName ?? cred.user.email?.split("@")[0] ?? "Coach";
+    await createCoach(cred.user.uid, name, cred.user.email ?? "");
+    coachData = await firestoreRead(() => getCoach(cred.user.uid));
+    setCoach(coachData);
+    setRole("coach");
+    return "coach";
+  };
+
   const signOut = async () => {
     await firebaseSignOut(getFirebaseAuth());
     setCoach(null);
@@ -125,7 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, coach, athleteAccess, role, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={{ user, coach, athleteAccess, role, loading, signIn, signUp, signInWithGoogle, signOut }}>
       {children}
     </AuthContext.Provider>
   );

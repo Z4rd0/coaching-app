@@ -39,7 +39,6 @@ export default function NewAthletePage() {
         goals: goals.trim(),
         notes: notes.trim(),
         status: "pending",
-        garminConnected: false,
       });
 
       const link = `${APP_URL}/join/${user.uid}/${ref.id}`;

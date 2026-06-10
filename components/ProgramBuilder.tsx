@@ -16,6 +16,7 @@ const TYPE_COLOR: Record<string, string> = {
   mobility: "bg-purple-400",
   rest: "bg-slate-500",
   other: "bg-slate-400",
+  circuit: "bg-yellow-400",
 };
 
 const inputCls = "w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-primary";
@@ -217,7 +218,9 @@ export default function ProgramBuilder({ cycles, onChange }: Props) {
                               )}
                             </div>
                             <p className="text-xs text-slate-500 mt-0.5">
-                              {session.exercises.length} esercizi · {session.durationMin} min · RPE {session.targetRPE}
+                              {session.type === "circuit"
+                                ? `${session.targetRounds ?? "?"} round · ${session.exercises.length} esercizi · ${session.durationMin} min`
+                                : `${session.exercises.length} esercizi · ${session.durationMin} min · RPE ${session.targetRPE}`}
                             </p>
                           </div>
 
@@ -377,6 +380,30 @@ export default function ProgramBuilder({ cycles, onChange }: Props) {
                                 />
                               </Field>
                             </div>
+
+                            {/* Circuit-specific fields */}
+                            {session.type === "circuit" && (
+                              <div className="grid grid-cols-2 gap-2 p-3 bg-yellow-400/5 border border-yellow-400/20 rounded-xl">
+                                <Field label="Round target">
+                                  <input
+                                    type="number" min={1}
+                                    value={session.targetRounds ?? ""}
+                                    onChange={(e) => updateSession(ci, wi, si, (s) => ({ ...s, targetRounds: e.target.value ? +e.target.value : undefined }))}
+                                    placeholder="4"
+                                    className={inputCls}
+                                  />
+                                </Field>
+                                <Field label="Recupero tra round (sec)">
+                                  <input
+                                    type="number" min={0}
+                                    value={session.restBetweenRoundsSeconds ?? ""}
+                                    onChange={(e) => updateSession(ci, wi, si, (s) => ({ ...s, restBetweenRoundsSeconds: e.target.value ? +e.target.value : undefined }))}
+                                    placeholder="90"
+                                    className={inputCls}
+                                  />
+                                </Field>
+                              </div>
+                            )}
 
                             {/* Exercises */}
                             <div className="space-y-2">

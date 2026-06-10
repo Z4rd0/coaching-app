@@ -4,15 +4,24 @@ import {
   adminGetAthlete,
   adminActivateAthlete,
   adminUpdateInviteStatus,
+  adminSyncGroupMembership,
 } from "@/lib/firestore-admin";
+import { verifyRequestAuth } from "@/lib/server-auth";
 
 export async function POST(req: NextRequest) {
   try {
-    const { token, coachId, athleteUid, name, email } = await req.json();
+    const { token, coachId, name, email } = await req.json();
 
-    if (!token || !coachId || !athleteUid) {
+    if (!token || !coachId) {
       return NextResponse.json({ error: "Parametri mancanti" }, { status: 400 });
     }
+
+    // The activating uid comes from the verified token, never from the body
+    const caller = await verifyRequestAuth(req);
+    if (!caller) {
+      return NextResponse.json({ error: "Non autorizzato" }, { status: 401 });
+    }
+    const athleteUid = caller.uid;
 
     // 1. Fetch and validate the invite
     const invite = await adminGetInvite(coachId, token);
@@ -42,7 +51,10 @@ export async function POST(req: NextRequest) {
       email ?? athlete.email
     );
 
-    // 4. Mark invite as accepted
+    // 4. If the athlete was pre-added to groups, authorize their access
+    await adminSyncGroupMembership(coachId, invite.athleteId, athleteUid);
+
+    // 5. Mark invite as accepted
     await adminUpdateInviteStatus(coachId, token, "accepted");
 
     return NextResponse.json({

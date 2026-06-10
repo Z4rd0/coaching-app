@@ -60,23 +60,24 @@ function InviteAcceptContent() {
     setStep("accepting");
 
     try {
-      let uid: string;
       let displayName = name;
 
       if (mode === "register") {
         if (!name.trim()) { setError("Inserisci il tuo nome"); setStep("form"); return; }
-        const cred = await createUserWithEmailAndPassword(getFirebaseAuth(), email, password);
-        uid = cred.user.uid;
+        await createUserWithEmailAndPassword(getFirebaseAuth(), email, password);
       } else {
         const cred = await signInWithEmailAndPassword(getFirebaseAuth(), email, password);
-        uid = cred.user.uid;
         displayName = cred.user.displayName ?? email;
       }
 
+      const idToken = await getFirebaseAuth().currentUser?.getIdToken();
       const res = await fetch("/api/invite/accept", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token, coachId, athleteUid: uid, name: displayName, email }),
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({ token, coachId, name: displayName, email }),
       });
 
       if (!res.ok) {

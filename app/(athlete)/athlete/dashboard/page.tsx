@@ -10,8 +10,10 @@ import {
   getActiveAthleteProgram,
   getLogs,
   getTodaySession,
+  getGroupsForAthlete,
+  getActiveGroupProgram,
 } from "@/lib/firestore";
-import type { AthleteProgram, WorkoutLog } from "@/types";
+import type { AthleteProgram, GroupProgram, WorkoutLog } from "@/types";
 import { SESSION_TYPE_LABELS, MOOD_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
@@ -19,6 +21,7 @@ export default function AthleteDashboardPage() {
   const { user, athleteAccess, signOut } = useAuth();
   const router = useRouter();
   const [program, setProgram] = useState<AthleteProgram | null>(null);
+  const [groupPrograms, setGroupPrograms] = useState<(GroupProgram & { groupName: string })[]>([]);
   const [recentLogs, setRecentLogs] = useState<WorkoutLog[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -28,13 +31,25 @@ export default function AthleteDashboardPage() {
     Promise.all([
       getActiveAthleteProgram(coachId, athleteId),
       getLogs(coachId, athleteId, 5),
-    ]).then(([prog, logs]) => {
+      getGroupsForAthlete(coachId, user.uid).then((groups) =>
+        Promise.all(
+          groups.map(async (g) => {
+            const p = await getActiveGroupProgram(coachId, g.id);
+            return p ? { ...p, groupName: g.name } : null;
+          })
+        ).then((res) => res.filter((p): p is GroupProgram & { groupName: string } => p !== null))
+      ),
+    ]).then(([prog, logs, gProgs]) => {
       setProgram(prog);
       setRecentLogs(logs);
+      setGroupPrograms(gProgs);
     }).finally(() => setLoading(false));
   }, [user, athleteAccess]);
 
   const todaySession = program ? getTodaySession(program) : null;
+  const todayGroupSessions = groupPrograms
+    .map((p) => ({ groupName: p.groupName, programName: p.name, session: getTodaySession(p) }))
+    .filter((g) => g.session !== null);
 
   const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const weekLogs = recentLogs.filter((l) => l.date.toMillis() > oneWeekAgo);
@@ -106,7 +121,38 @@ export default function AthleteDashboardPage() {
         </div>
       )}
 
-      {!program && (
+      {/* Today's group sessions */}
+      {todayGroupSessions.map((g) => (
+        <div key={`${g.groupName}-${g.programName}`} className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              Oggi · 👥 {g.groupName}
+            </p>
+            <span className="text-xs text-slate-500">{g.programName}</span>
+          </div>
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">
+                {SESSION_TYPE_LABELS[g.session!.type]}
+              </span>
+              {g.session!.title && (
+                <span className="text-white font-semibold text-sm">{g.session!.title}</span>
+              )}
+            </div>
+            <p className="text-slate-400 text-xs">
+              {g.session!.exercises.length} esercizi · {g.session!.durationMin} min · RPE {g.session!.targetRPE}
+            </p>
+            <Link
+              href="/athlete/log"
+              className="mt-3 block w-full text-center bg-primary text-white font-semibold py-2.5 rounded-xl text-sm"
+            >
+              Logga allenamento
+            </Link>
+          </div>
+        </div>
+      ))}
+
+      {!program && groupPrograms.length === 0 && (
         <div className="bg-slate-800 rounded-2xl p-5 border border-slate-700 text-center">
           <p className="text-slate-400 text-sm">Nessun programma attivo.</p>
           <p className="text-slate-500 text-xs mt-1">Il tuo coach ti assegnerà presto un programma.</p>

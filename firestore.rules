@@ -37,6 +37,33 @@ service cloud.firestore {
         allow read, write: if isCoach(coachId);
       }
 
+      // ── Groups ───────────────────────────────────────────────────────────────
+      match /groups/{groupId} {
+        function isGroupMember() {
+          return request.auth != null
+            && request.auth.uid in get(/databases/$(database)/documents/coaches/$(coachId)/groups/$(groupId)).data.memberUids;
+        }
+
+        allow read, write: if isCoach(coachId);
+        // Members can read the group doc — also authorizes list queries
+        // filtered with where("memberUids", "array-contains", uid)
+        allow read: if request.auth != null && request.auth.uid in resource.data.memberUids;
+
+        // Shared group programs — read-only for members
+        match /programs/{programId} {
+          allow read, write: if isCoach(coachId);
+          allow read: if isGroupMember();
+        }
+
+        // Activity feed (fase 2 "gara"): members read, but entries are
+        // written ONLY server-side by /api/group-feed (anti-cheating —
+        // the entry is derived from the saved log, not client input)
+        match /feed/{entryId} {
+          allow read, write: if isCoach(coachId);
+          allow read: if isGroupMember();
+        }
+      }
+
       // ── Athletes subcollection ───────────────────────────────────────────────
       match /athletes/{athleteId} {
         allow read, write: if isCoach(coachId);
@@ -72,9 +99,16 @@ service cloud.firestore {
 
     // ── AthleteAccess lookup ───────────────────────────────────────────────────
     match /athleteAccess/{uid} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
-      // Coaches can read athleteAccess to map athletes back to UIDs
-      allow read: if request.auth != null;
+      // Owner can read their own access doc
+      allow read: if request.auth != null && request.auth.uid == uid;
+      // The owning coach can read it (to map athletes back to UIDs)
+      allow read: if request.auth != null && resource.data.coachId == request.auth.uid;
+      // Owner can write it ONLY if the referenced athlete profile is really
+      // theirs (athleteUid == their uid) — prevents self-linking to another
+      // coach's athlete. Server-side flows (join-group, invite) bypass rules.
+      allow write: if request.auth != null
+        && request.auth.uid == uid
+        && get(/databases/$(database)/documents/coaches/$(request.resource.data.coachId)/athletes/$(request.resource.data.athleteId)).data.athleteUid == request.auth.uid;
     }
   }
 }

@@ -63,10 +63,10 @@ export default function AthleteHistoryPage() {
                   <p className="text-slate-400 text-xs mt-2 line-clamp-2">{log.notes}</p>
                 )}
 
-                {log.aiAnalysis && (
+                {log.coachComment && (
                   <div className="mt-3 bg-primary/5 border border-primary/20 rounded-xl px-3 py-2">
-                    <p className="text-xs text-primary font-medium mb-0.5">✨ AI Feedback</p>
-                    <p className="text-xs text-slate-300 line-clamp-2">{log.aiAnalysis.summary}</p>
+                    <p className="text-xs text-primary font-medium mb-0.5">💬 Dal tuo coach</p>
+                    <p className="text-xs text-slate-300">{log.coachComment}</p>
                   </div>
                 )}
               </div>
