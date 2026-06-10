@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { Timestamp } from "firebase/firestore";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
@@ -11,12 +12,9 @@ import { SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import LogEditModal from "@/components/LogEditModal";
 import LogDetailBody from "@/components/LogDetailBody";
-import { Timestamp } from "firebase/firestore";
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
-
-export default function LogDetailPage() {
-  const { user } = useAuth();
+export default function AthleteLogDetailPage() {
+  const { user, athleteAccess } = useAuth();
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const [log, setLog] = useState<WorkoutLog | null>(null);
@@ -27,12 +25,13 @@ export default function LogDetailPage() {
   const [actionError, setActionError] = useState("");
 
   useEffect(() => {
-    if (!user) return;
-    getLog(user.uid, user.uid, id).then((data) => {
+    if (!user || !athleteAccess) return;
+    const { coachId, athleteId } = athleteAccess;
+    getLog(coachId, athleteId, id).then((data) => {
       setLog(data);
       setLoading(false);
     });
-  }, [user, id]);
+  }, [user, athleteAccess, id]);
 
   const handleSaveEdit = async (patch: {
     dateISO: string;
@@ -50,7 +49,6 @@ export default function LogDetailPage() {
       body: JSON.stringify({ logId: id, patch }),
     });
     if (!res.ok) throw new Error("update failed");
-    // Optimistic in-place refresh — avoids extra Firestore read
     setLog((prev) => prev ? {
       ...prev,
       date: Timestamp.fromDate(new Date(patch.dateISO + "T12:00:00")),
@@ -74,7 +72,7 @@ export default function LogDetailPage() {
         body: JSON.stringify({ logId: id }),
       });
       if (!res.ok) throw new Error("delete failed");
-      router.push("/history");
+      router.push("/athlete/history");
     } catch {
       setActionError("Errore nell'eliminazione");
       setDeleting(false);
@@ -92,7 +90,7 @@ export default function LogDetailPage() {
     <div className="px-4 pt-6 pb-8 space-y-5">
       {/* Header */}
       <div className="flex items-start gap-3">
-        <button onClick={() => router.back()} className="text-slate-400 mt-1">
+        <button onClick={() => router.push("/athlete/history")} className="text-slate-400 mt-1">
           <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
           </svg>
@@ -136,7 +134,7 @@ export default function LogDetailPage() {
         <div className="bg-red-500/10 border border-red-500/30 rounded-2xl p-4 space-y-3">
           <p className="text-red-400 text-sm font-medium">Eliminare questo log?</p>
           <p className="text-slate-400 text-xs">
-            Verrà rimosso anche dal feed di tutti i gruppi e dalla classifica. Non si può annullare.
+            Verrà rimosso anche dal feed di tutti i tuoi gruppi e dalla classifica. Non si può annullare.
           </p>
           {actionError && <p className="text-red-400 text-xs">{actionError}</p>}
           <div className="flex gap-2">

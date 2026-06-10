@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { getLogs } from "@/lib/firestore";
 import type { WorkoutLog } from "@/types";
@@ -33,7 +34,11 @@ export default function AthleteHistoryPage() {
       ) : (
         <div className="space-y-3">
           {logs.map((log) => (
-            <div key={log.id} className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
+            <Link
+              key={log.id}
+              href={`/athlete/history/${log.id}`}
+              className="block bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden hover:border-slate-600 transition-colors"
+            >
               <div className="px-4 py-3">
                 <div className="flex items-start justify-between gap-2">
                   <div>
@@ -70,7 +75,7 @@ export default function AthleteHistoryPage() {
                   </div>
                 )}
               </div>
-            </div>
+            </Link>
           ))}
         </div>
       )}
