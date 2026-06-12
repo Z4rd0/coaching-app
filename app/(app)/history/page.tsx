@@ -14,7 +14,7 @@ const RPEChart = dynamic(() => import("@/components/RPEChart"), {
 import { useAuth } from "@/contexts/AuthContext";
 import { getLogs, getPrograms } from "@/lib/firestore";
 import type { WorkoutLog, Program } from "@/types";
-import { SESSION_TYPE_LABELS, MOOD_LABELS } from "@/types";
+import { MOOD_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
 type FilterType = "all" | "strength" | "cardio" | "mobility" | "other";
