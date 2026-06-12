@@ -17,6 +17,13 @@ import type { AthleteProgram, GroupProgram, WorkoutLog } from "@/types";
 import { SESSION_TYPE_LABELS, MOOD_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
+const SESSION_TYPE_COLORS: Record<string, { color: string; bg: string }> = {
+  strength: { color: "#60A5FA", bg: "rgba(59,130,246,0.12)" },
+  hiit:     { color: "#FB7185", bg: "rgba(244,63,94,0.12)" },
+  cardio:   { color: "#FBBF24", bg: "rgba(245,158,11,0.12)" },
+  circuit:  { color: "#FACC15", bg: "rgba(250,204,21,0.12)" },
+};
+
 export default function AthleteDashboardPage() {
   const { user, athleteAccess, signOut } = useAuth();
   const router = useRouter();
@@ -24,6 +31,7 @@ export default function AthleteDashboardPage() {
   const [groupPrograms, setGroupPrograms] = useState<(GroupProgram & { groupName: string })[]>([]);
   const [recentLogs, setRecentLogs] = useState<WorkoutLog[]>([]);
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<"solo" | "group">("solo");
 
   useEffect(() => {
     if (!user || !athleteAccess) return;
@@ -53,9 +61,10 @@ export default function AthleteDashboardPage() {
 
   const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const weekLogs = recentLogs.filter((l) => l.date.toMillis() > oneWeekAgo);
-  const avgRPE = weekLogs.length > 0
-    ? (weekLogs.reduce((s, l) => s + l.perceivedRPE, 0) / weekLogs.length).toFixed(1)
-    : "—";
+  const avgRPE =
+    weekLogs.length > 0
+      ? (weekLogs.reduce((s, l) => s + l.perceivedRPE, 0) / weekLogs.length).toFixed(1)
+      : "—";
 
   const handleSignOut = async () => {
     document.cookie = "coach-auth=; path=/; max-age=0";
@@ -66,139 +75,231 @@ export default function AthleteDashboardPage() {
   if (loading) return <LoadingSpinner className="min-h-screen" />;
 
   return (
-    <div className="px-4 pt-6 space-y-6">
+    <div className="px-5 pt-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-slate-400 text-sm capitalize">
+          <p className="text-[13px] capitalize" style={{ color: "var(--text-muted)" }}>
             {format(new Date(), "EEEE d MMMM", { locale: it })}
           </p>
-          <h1 className="text-xl font-bold text-white">
+          <h1 className="text-[24px] font-bold mt-0.5" style={{ color: "var(--text-primary)" }}>
             Ciao 👋
           </h1>
         </div>
-        <button onClick={handleSignOut} className="text-slate-500 text-xs">
-          Esci
+        <button
+          onClick={handleSignOut}
+          className="w-9 h-9 rounded-full flex items-center justify-center active:opacity-60"
+          style={{ background: "var(--bg-surface-2)" }}
+          aria-label="Esci"
+        >
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--text-muted)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H6a2 2 0 01-2-2V7a2 2 0 012-2h5a2 2 0 012 2v1" />
+          </svg>
         </button>
       </div>
 
-      {/* Today's session */}
-      {program && (
-        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Oggi</p>
-            <span className="text-xs text-slate-500">{program.name}</span>
-          </div>
+      {/* Segmented control */}
+      {groupPrograms.length > 0 && (
+        <div
+          className="flex p-1 rounded-xl"
+          style={{ background: "var(--bg-surface-1)" }}
+        >
+          {([["solo", "Solo"], ["group", "Gruppo 👥"]] as const).map(([v, label]) => (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className="flex-1 py-2 rounded-lg text-[13px] font-semibold transition-all"
+              style={
+                view === v
+                  ? { background: "var(--green-primary)", color: "#fff" }
+                  : { background: "transparent", color: "var(--text-muted)" }
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
 
-          {todaySession ? (
-            <div>
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">
-                  {SESSION_TYPE_LABELS[todaySession.type]}
-                </span>
-                {todaySession.title && (
-                  <span className="text-white font-semibold text-sm">{todaySession.title}</span>
-                )}
-              </div>
-              <p className="text-slate-400 text-xs">
-                {todaySession.exercises.length} esercizi · {todaySession.durationMin} min · RPE {todaySession.targetRPE}
-              </p>
-              <Link
-                href="/athlete/log"
-                className="mt-3 block w-full text-center bg-primary text-white font-semibold py-2.5 rounded-xl text-sm"
-              >
-                Logga allenamento
-              </Link>
-            </div>
+      {/* Solo view */}
+      {view === "solo" && (
+        <>
+          {/* Today's session */}
+          {program ? (
+            <TodaySessionCard
+              title={program.name}
+              session={todaySession}
+              href="/athlete/log"
+            />
           ) : (
-            <div className="text-center py-4">
-              <p className="text-slate-400 text-sm">Nessuna sessione pianificata per oggi 🛌</p>
-              <Link href="/athlete/log" className="text-primary text-xs mt-1 inline-block">
-                Logga comunque →
-              </Link>
+            <div className="card px-4 py-5 text-center">
+              <p className="text-[14px] mb-2" style={{ color: "var(--text-muted)" }}>
+                Nessun programma attivo.
+              </p>
+              <p className="text-[12px]" style={{ color: "var(--text-faint)" }}>
+                Il tuo coach ti assegnerà presto un programma.
+              </p>
             </div>
           )}
-        </div>
-      )}
 
-      {/* Today's group sessions */}
-      {todayGroupSessions.map((g) => (
-        <div key={`${g.groupName}-${g.programName}`} className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
-          <div className="flex items-center justify-between mb-3">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
-              Oggi · 👥 {g.groupName}
-            </p>
-            <span className="text-xs text-slate-500">{g.programName}</span>
-          </div>
-          <div>
-            <div className="flex items-center gap-2 mb-1">
-              <span className="text-xs px-2 py-0.5 rounded-full bg-primary/20 text-primary font-medium">
-                {SESSION_TYPE_LABELS[g.session!.type]}
+          {/* Stats grid */}
+          <div className="grid grid-cols-2 gap-2.5">
+            <div className="card px-4 py-4 flex flex-col items-center gap-1">
+              <span className="text-[28px] font-black tabular leading-none" style={{ color: "var(--text-primary)" }}>
+                {weekLogs.length}
               </span>
-              {g.session!.title && (
-                <span className="text-white font-semibold text-sm">{g.session!.title}</span>
-              )}
+              <span className="text-[11px] text-center" style={{ color: "var(--text-faint)" }}>
+                Sessioni questa settimana
+              </span>
             </div>
-            <p className="text-slate-400 text-xs">
-              {g.session!.exercises.length} esercizi · {g.session!.durationMin} min · RPE {g.session!.targetRPE}
-            </p>
-            <Link
-              href="/athlete/log"
-              className="mt-3 block w-full text-center bg-primary text-white font-semibold py-2.5 rounded-xl text-sm"
-            >
-              Logga allenamento
-            </Link>
+            <div className="card px-4 py-4 flex flex-col items-center gap-1">
+              <span className="text-[28px] font-black tabular leading-none" style={{ color: "var(--text-primary)" }}>
+                {avgRPE}
+              </span>
+              <span className="text-[11px] text-center" style={{ color: "var(--text-faint)" }}>
+                RPE medio
+              </span>
+            </div>
           </div>
-        </div>
-      ))}
-
-      {!program && groupPrograms.length === 0 && (
-        <div className="bg-slate-800 rounded-2xl p-5 border border-slate-700 text-center">
-          <p className="text-slate-400 text-sm">Nessun programma attivo.</p>
-          <p className="text-slate-500 text-xs mt-1">Il tuo coach ti assegnerà presto un programma.</p>
-        </div>
+        </>
       )}
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 gap-3">
-        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
-          <p className="text-xs text-slate-400 mb-1">Sessioni questa settimana</p>
-          <p className="text-2xl font-bold text-white">{weekLogs.length}</p>
-        </div>
-        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
-          <p className="text-xs text-slate-400 mb-1">RPE medio</p>
-          <p className="text-2xl font-bold text-white">{avgRPE}</p>
-        </div>
-      </div>
+      {/* Group view */}
+      {view === "group" && (
+        <>
+          {todayGroupSessions.length > 0 ? (
+            todayGroupSessions.map((g) => (
+              <TodaySessionCard
+                key={`${g.groupName}-${g.programName}`}
+                title={`👥 ${g.groupName}`}
+                session={g.session}
+                href="/athlete/log"
+              />
+            ))
+          ) : (
+            <div className="card px-4 py-5 text-center">
+              <p className="text-[14px]" style={{ color: "var(--text-muted)" }}>
+                Nessuna sessione di gruppo oggi
+              </p>
+            </div>
+          )}
+          <Link
+            href="/athlete/group"
+            className="block text-center py-3 rounded-xl text-[14px] font-semibold transition-opacity active:opacity-70"
+            style={{ background: "var(--bg-surface-2)", color: "var(--green-primary)", border: "1px solid var(--green-border)" }}
+          >
+            Vedi classifica gruppo →
+          </Link>
+        </>
+      )}
 
       {/* Recent logs */}
       {recentLogs.length > 0 && (
-        <div>
+        <section>
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-white">Ultimi allenamenti</h2>
-            <Link href="/athlete/history" className="text-primary text-xs">Tutti →</Link>
+            <h2 className="section-label">Ultimi allenamenti</h2>
+            <Link href="/athlete/history" className="text-[12px] font-semibold" style={{ color: "var(--green-primary)" }}>
+              Tutti →
+            </Link>
           </div>
           <div className="space-y-2">
-            {recentLogs.slice(0, 3).map((log) => (
-              <div key={log.id} className="bg-slate-800 rounded-2xl px-4 py-3 border border-slate-700">
-                <div className="flex items-center justify-between">
-                  <p className="text-white text-sm font-medium">
-                    {format(log.date.toDate(), "EEE d MMM", { locale: it })}
-                  </p>
-                  <div className="flex gap-2 text-xs text-slate-400">
-                    <span>{MOOD_LABELS[log.mood]}</span>
-                    <span>RPE {log.perceivedRPE}</span>
-                    <span>{log.actualDurationMin} min</span>
+            {recentLogs.slice(0, 3).map((log) => {
+              const tc = SESSION_TYPE_COLORS[log.plannedSession?.type ?? ""] ?? SESSION_TYPE_COLORS.strength;
+              return (
+                <div key={log.id} className="card-2 flex items-center gap-3 px-4 py-3">
+                  <span className="text-xl">{MOOD_LABELS[log.mood]}</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[14px] font-medium" style={{ color: "var(--text-primary)" }}>
+                      {format(log.date.toDate(), "EEE d MMM", { locale: it })}
+                    </p>
+                    {log.notes && (
+                      <p className="text-[12px] truncate mt-0.5" style={{ color: "var(--text-faint)" }}>
+                        {log.notes}
+                      </p>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-end gap-0.5 shrink-0">
+                    <span className="text-[13px] font-black tabular" style={{ color: tc.color }}>
+                      RPE {log.perceivedRPE}
+                    </span>
+                    <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>
+                      {log.actualDurationMin} min
+                    </span>
                   </div>
                 </div>
-                {log.notes && (
-                  <p className="text-slate-500 text-xs mt-1 truncate">{log.notes}</p>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
-        </div>
+        </section>
       )}
+
+      <div className="h-4" />
+    </div>
+  );
+}
+
+function TodaySessionCard({
+  title,
+  session,
+  href,
+}: {
+  title: string;
+  session: ReturnType<typeof getTodaySession>;
+  href: string;
+}) {
+  const tc = session
+    ? (SESSION_TYPE_COLORS[session.type] ?? SESSION_TYPE_COLORS.strength)
+    : null;
+
+  return (
+    <div
+      className="card-hero overflow-hidden"
+      style={{ border: `1px solid ${tc?.bg ?? "var(--border-default)"}` }}
+    >
+      <div className="px-4 pt-4 pb-2">
+        <p className="section-label mb-2">{title}</p>
+        {session ? (
+          <>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex-1 min-w-0">
+                <span
+                  className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold"
+                  style={{ background: tc?.bg, color: tc?.color }}
+                >
+                  {SESSION_TYPE_LABELS[session.type]}
+                </span>
+                {session.title && (
+                  <h3 className="text-[17px] font-bold mt-1.5 truncate" style={{ color: "var(--text-primary)" }}>
+                    {session.title}
+                  </h3>
+                )}
+                <p className="text-[12px] mt-1" style={{ color: "var(--text-muted)" }}>
+                  {session.exercises.length} esercizi · {session.durationMin} min · RPE {session.targetRPE}
+                </p>
+              </div>
+              <div className="shrink-0 flex flex-col items-end">
+                <p className="text-[10px] font-medium uppercase" style={{ color: "var(--text-faint)" }}>RPE</p>
+                <p className="text-[28px] font-black tabular leading-none" style={{ color: tc?.color }}>
+                  {session.targetRPE}
+                </p>
+              </div>
+            </div>
+          </>
+        ) : (
+          <p className="text-[13px] py-2" style={{ color: "var(--text-muted)" }}>
+            Nessuna sessione programmata oggi 🛌
+          </p>
+        )}
+      </div>
+      <div className="px-4 pb-4">
+        <Link
+          href={href}
+          className="block w-full text-center text-white font-bold py-3 rounded-xl text-[15px] transition-opacity active:opacity-80"
+          style={{ background: tc?.color ?? "var(--green-primary)" }}
+        >
+          {session ? "Inizia allenamento" : "Logga comunque"}
+        </Link>
+      </div>
     </div>
   );
 }

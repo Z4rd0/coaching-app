@@ -4,17 +4,17 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 
-type Mode = "login" | "register";
+type Mode = "login" | "signup";
 
 export default function AuthPage() {
   const { signIn, signUp, signInWithGoogle } = useAuth();
   const router = useRouter();
   const [mode, setMode] = useState<Mode>("login");
-  // New signups here are coaches; athletes join via their coach's link
   const [regRole, setRegRole] = useState<"coach" | "athlete">("coach");
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
@@ -28,7 +28,6 @@ export default function AuthPage() {
       router.replace(role === "athlete" ? "/athlete/dashboard" : "/");
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Errore di autenticazione";
-      // User closed the popup — not an error worth showing
       if (!msg.includes("popup-closed-by-user") && !msg.includes("cancelled-popup-request")) {
         setError("Accesso con Google non riuscito. Riprova.");
       }
@@ -44,10 +43,7 @@ export default function AuthPage() {
       if (mode === "login") {
         const role = await signIn(email, password);
         document.cookie = "coach-auth=1; path=/; max-age=2592000";
-        if (role === "athlete") {
-          router.replace("/athlete/dashboard");
-          return;
-        }
+        if (role === "athlete") { router.replace("/athlete/dashboard"); return; }
       } else {
         if (!name.trim()) { setError("Inserisci il tuo nome"); setLoading(false); return; }
         await signUp(name.trim(), email, password);
@@ -71,141 +67,210 @@ export default function AuthPage() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center px-4">
+    <div
+      className="min-h-screen flex flex-col items-center justify-center px-7"
+      style={{ background: "var(--bg-base)" }}
+    >
       <div className="w-full max-w-sm">
-        {/* Logo / brand */}
+
+        {/* Logo */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-primary mb-4">
-            <svg className="w-9 h-9 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M13 10V3L4 14h7v7l9-11h-7z" />
+          <div
+            className="inline-flex items-center justify-center w-16 h-16 mb-4"
+            style={{
+              borderRadius: 20,
+              background: "linear-gradient(135deg, rgba(29,158,117,0.20) 0%, rgba(29,158,117,0.08) 100%)",
+              border: "1px solid var(--green-border)",
+            }}
+          >
+            <svg width="32" height="32" fill="none" viewBox="0 0 24 24" stroke="var(--green-primary)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+              <path d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
           </div>
-          <h1 className="text-2xl font-bold text-white">Coach App</h1>
-          <p className="text-slate-400 text-sm mt-1">Il tuo diario di allenamento</p>
+          <h1 className="text-[24px] font-extrabold" style={{ color: "var(--text-primary)" }}>
+            Coaching App
+          </h1>
+          <p className="text-[13px] mt-1" style={{ color: "var(--text-muted)" }}>
+            Il tuo diario di allenamento
+          </p>
         </div>
 
-        {/* Tab switcher */}
-        <div className="flex bg-slate-800 rounded-xl p-1 mb-6">
-          {(["login", "register"] as Mode[]).map((m) => (
+        {/* Toggle */}
+        <div
+          className="flex p-1 mb-6 rounded-xl"
+          style={{ background: "var(--bg-surface-1)" }}
+        >
+          {(["login", "signup"] as Mode[]).map((m) => (
             <button
               key={m}
               onClick={() => { setMode(m); setError(""); }}
-              className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
-                mode === m ? "bg-primary text-white" : "text-slate-400"
-              }`}
+              className="flex-1 py-2.5 rounded-lg text-[14px] font-semibold transition-all duration-200"
+              style={
+                mode === m
+                  ? { background: "var(--green-primary)", color: "#fff" }
+                  : { background: "transparent", color: "var(--text-muted)" }
+              }
             >
               {m === "login" ? "Accedi" : "Registrati"}
             </button>
           ))}
         </div>
 
-        {/* Role selector — athlete accounts are created via the coach's link */}
-        {mode === "register" && (
-          <div className="mb-4">
-            <p className="text-sm font-medium text-slate-300 mb-2">Chi sei?</p>
+        {/* Role selector (signup only) */}
+        {mode === "signup" && (
+          <div className="mb-5">
+            <p className="text-[13px] font-medium mb-2" style={{ color: "var(--text-secondary)" }}>
+              Chi sei?
+            </p>
             <div className="grid grid-cols-2 gap-2">
-              {([["coach", "🏋️ Sono un coach"], ["athlete", "🏃 Sono un atleta"]] as const).map(([r, label]) => (
+              {([["coach", "🏋️", "Sono un coach"], ["athlete", "💪", "Sono un atleta"]] as const).map(([r, emoji, label]) => (
                 <button
                   key={r}
                   type="button"
                   onClick={() => { setRegRole(r); setError(""); }}
-                  className={`py-3 rounded-xl text-sm font-medium border transition-colors ${
+                  className="py-3.5 rounded-xl text-[13px] font-semibold transition-all"
+                  style={
                     regRole === r
-                      ? "bg-primary/15 border-primary text-primary"
-                      : "bg-slate-800 border-slate-700 text-slate-400"
-                  }`}
+                      ? { background: "var(--green-subtle)", border: "1px solid var(--green-border)", color: "var(--green-primary)" }
+                      : { background: "var(--bg-surface-2)", border: "1px solid var(--border-default)", color: "var(--text-muted)" }
+                  }
                 >
-                  {label}
+                  {emoji} {label}
                 </button>
               ))}
             </div>
           </div>
         )}
 
-        {mode === "register" && regRole === "athlete" ? (
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl px-4 py-5 space-y-2">
-            <p className="text-white text-sm font-semibold">Ti serve il link del tuo coach 🔗</p>
-            <p className="text-slate-400 text-sm leading-relaxed">
+        {/* Athlete info banner */}
+        {mode === "signup" && regRole === "athlete" ? (
+          <div
+            className="rounded-xl px-4 py-4 space-y-2"
+            style={{ background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.15)" }}
+          >
+            <div className="flex items-start gap-2">
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="#60A5FA" strokeWidth={2} className="mt-0.5 shrink-0">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              <p className="text-[13px] font-semibold" style={{ color: "#60A5FA" }}>
+                Ti serve il link del tuo coach
+              </p>
+            </div>
+            <p className="text-[12px] leading-relaxed" style={{ color: "var(--text-muted)" }}>
               Gli account atleta si creano tramite il link d&apos;invito personale o di gruppo
-              che ti manda il tuo coach. Aprilo e potrai registrarti lì, anche con Google.
+              che ti manda il tuo coach. Aprilo per registrarti, anche con Google.
             </p>
-            <p className="text-slate-500 text-xs">
+            <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>
               Hai già un account? Usa la tab &quot;Accedi&quot; qui sopra.
             </p>
           </div>
         ) : (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {mode === "register" && (
+          <form onSubmit={handleSubmit} className="space-y-3">
+            {mode === "signup" && (
+              <div>
+                <label className="block text-[13px] font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
+                  Nome
+                </label>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Il tuo nome"
+                  required
+                  className="input-base"
+                />
+              </div>
+            )}
+
             <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Nome</label>
+              <label className="block text-[13px] font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
+                Email
+              </label>
               <input
-                type="text"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="Il tuo nome"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="coach@email.com"
                 required
-                className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary"
+                autoComplete="email"
+                className="input-base"
               />
             </div>
-          )}
 
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="coach@email.com"
-              required
-              autoComplete="email"
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-300 mb-1">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-              required
-              autoComplete={mode === "login" ? "current-password" : "new-password"}
-              minLength={6}
-              className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-3 text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary"
-            />
-          </div>
-
-          {error && (
-            <div className="bg-red-500/10 border border-red-500/30 rounded-xl px-4 py-3 text-red-400 text-sm">
-              {error}
+            <div>
+              <label className="block text-[13px] font-medium mb-1.5" style={{ color: "var(--text-secondary)" }}>
+                Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showPassword ? "text" : "password"}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  autoComplete={mode === "login" ? "current-password" : "new-password"}
+                  minLength={6}
+                  className="input-base pr-12"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2"
+                  style={{ color: "var(--text-faint)" }}
+                  tabIndex={-1}
+                >
+                  {showPassword ? (
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M3.98 8.223A10.477 10.477 0 001.934 12C3.226 16.338 7.244 19.5 12 19.5c.993 0 1.953-.138 2.863-.395M6.228 6.228A10.45 10.45 0 0112 4.5c4.756 0 8.773 3.162 10.065 7.498a10.523 10.523 0 01-4.293 5.774M6.228 6.228L3 3m3.228 3.228l3.65 3.65m7.894 7.894L21 21m-3.228-3.228l-3.65-3.65m0 0a3 3 0 10-4.243-4.243m4.242 4.242L9.88 9.88" />
+                    </svg>
+                  ) : (
+                    <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" />
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                  )}
+                </button>
+              </div>
             </div>
-          )}
 
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full bg-primary hover:bg-primary-600 disabled:opacity-60 text-white font-semibold py-3 rounded-xl transition-colors"
-          >
-            {loading ? "..." : mode === "login" ? "Accedi" : "Crea account coach"}
-          </button>
-        </form>
+            {error && (
+              <div
+                className="rounded-xl px-4 py-3 text-[13px]"
+                style={{ background: "rgba(239,68,68,0.10)", border: "1px solid rgba(239,68,68,0.20)", color: "#EF4444" }}
+              >
+                {error}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="btn-primary mt-1 disabled:opacity-60"
+            >
+              {loading ? "..." : mode === "login" ? "Accedi" : "Crea account coach"}
+            </button>
+          </form>
         )}
 
-        {/* Google sign-in — hidden for athlete signups (they use the coach's link) */}
-        {!(mode === "register" && regRole === "athlete") && (
+        {/* Google sign-in */}
+        {!(mode === "signup" && regRole === "athlete") && (
           <>
-            <div className="flex items-center gap-3 my-6">
-              <div className="h-px flex-1 bg-slate-700" />
-              <span className="text-xs text-slate-500">oppure</span>
-              <div className="h-px flex-1 bg-slate-700" />
+            <div className="flex items-center gap-3 my-5">
+              <div className="h-px flex-1" style={{ background: "var(--border-default)" }} />
+              <span className="text-[12px]" style={{ color: "var(--text-faintest)" }}>oppure</span>
+              <div className="h-px flex-1" style={{ background: "var(--border-default)" }} />
             </div>
 
             <button
               type="button"
               onClick={handleGoogle}
               disabled={googleLoading}
-              className="w-full flex items-center justify-center gap-3 bg-white hover:bg-slate-100 disabled:opacity-60 text-slate-800 font-semibold py-3 rounded-xl transition-colors"
+              className="w-full flex items-center justify-center gap-3 py-3.5 rounded-[14px] text-[15px] font-semibold transition-opacity disabled:opacity-60 active:scale-[0.98]"
+              style={{
+                background: "var(--bg-surface-2)",
+                border: "1px solid var(--border-hover)",
+                color: "var(--text-primary)",
+              }}
             >
               <GoogleIcon />
               {googleLoading ? "Accesso in corso…" : "Continua con Google"}

@@ -4,17 +4,133 @@
 
 @layer base {
   :root {
-    --background: #0f172a;
-    --foreground: #f1f5f9;
+    /* Surface layers */
+    --bg-base:      #080D19;
+    --bg-surface-1: #0F172A;
+    --bg-surface-2: #111827;
+    --bg-surface-3: #131B2C;
+    --bg-nav:       #0B1120;
+
+    /* Brand */
+    --green-primary:  #1D9E75;
+    --green-hover:    #19876A;
+    --green-subtle:   rgba(29,158,117,0.12);
+    --green-border:   rgba(29,158,117,0.25);
+
+    /* Session types */
+    --type-strength: #60A5FA;
+    --type-hiit:     #FB7185;
+    --type-cardio:   #FBBF24;
+    --type-circuit:  #FACC15;
+
+    /* Text */
+    --text-primary:   #F1F5F9;
+    --text-secondary: #CBD5E1;
+    --text-muted:     #94A3B8;
+    --text-faint:     #64748B;
+    --text-faintest:  #475569;
+
+    /* Borders */
+    --border-default: rgba(148,163,184,0.06);
+    --border-hover:   rgba(148,163,184,0.10);
   }
 
   body {
-    @apply bg-slate-900 text-slate-100 antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background-color: var(--bg-base);
+    color: var(--text-primary);
+    font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   * {
     -webkit-tap-highlight-color: transparent;
+  }
+
+  /* Numeric tabular figures for stats */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "tnum";
+  }
+}
+
+@layer components {
+  /* Card variants */
+  .card {
+    background-color: var(--bg-surface-1);
+    border: 1px solid var(--border-default);
+    border-radius: 14px;
+  }
+  .card-2 {
+    background-color: var(--bg-surface-2);
+    border: 1px solid var(--border-default);
+    border-radius: 14px;
+  }
+  .card-hero {
+    background-color: var(--bg-surface-1);
+    border: 1px solid var(--border-default);
+    border-radius: 20px;
+  }
+
+  /* Input base */
+  .input-base {
+    width: 100%;
+    background-color: var(--bg-surface-2);
+    border: 1px solid var(--border-default);
+    border-radius: 12px;
+    padding: 14px 16px;
+    color: var(--text-primary);
+    font-size: 14px;
+    outline: none;
+    transition: border-color 150ms ease;
+  }
+  .input-base:focus {
+    border-color: var(--green-border);
+  }
+  .input-base::placeholder {
+    color: var(--text-faint);
+  }
+
+  /* CTA primary */
+  .btn-primary {
+    display: block;
+    width: 100%;
+    background-color: var(--green-primary);
+    color: #fff;
+    font-size: 16px;
+    font-weight: 700;
+    text-align: center;
+    padding: 14px 16px;
+    border-radius: 14px;
+    transition: background-color 150ms ease, transform 100ms ease, box-shadow 150ms ease;
+  }
+  .btn-primary:hover {
+    background-color: var(--green-hover);
+  }
+  .btn-primary:active {
+    transform: scale(0.98);
+  }
+
+  /* Section heading */
+  .section-label {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-faint);
+  }
+
+  /* Skeleton shimmer base */
+  .skeleton {
+    background: linear-gradient(
+      90deg,
+      var(--bg-surface-2) 25%,
+      rgba(148,163,184,0.06) 50%,
+      var(--bg-surface-2) 75%
+    );
+    background-size: 400px 100%;
+    animation: shimmer 1.4s ease-in-out infinite;
+    border-radius: 8px;
   }
 }
 
@@ -23,6 +139,19 @@
     padding-bottom: env(safe-area-inset-bottom, 0px);
   }
   .pb-nav {
-    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+    padding-bottom: calc(5rem + env(safe-area-inset-bottom, 0px));
   }
+
+  /* Session type badge backgrounds */
+  .bg-strength-subtle { background-color: rgba(59,130,246,0.12); }
+  .bg-hiit-subtle     { background-color: rgba(244,63,94,0.12); }
+  .bg-cardio-subtle   { background-color: rgba(245,158,11,0.12); }
+  .bg-circuit-subtle  { background-color: rgba(250,204,21,0.12); }
+
+  /* RPE colors */
+  .rpe-1,  .rpe-2,  .rpe-3  { color: #22C55E; }
+  .rpe-4,  .rpe-5            { color: #84CC16; }
+  .rpe-6,  .rpe-7            { color: #EAB308; }
+  .rpe-8                     { color: #F97316; }
+  .rpe-9,  .rpe-10           { color: #EF4444; }
 }

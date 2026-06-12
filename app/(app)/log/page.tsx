@@ -12,8 +12,9 @@ import HiitTimer from "@/components/HiitTimer";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
-const inputCls = "w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-primary";
-const labelCls = "block text-xs text-slate-400 mb-1";
+const inputCls = "w-full rounded-lg px-3 py-2.5 text-[13px] outline-none transition-colors focus:ring-1 focus:ring-[var(--green-primary)]"
+  + " bg-[var(--bg-surface-2)] border border-[rgba(148,163,184,0.08)] text-[var(--text-primary)] placeholder:text-[var(--text-faint)]";
+const labelCls = "block text-[11px] font-medium text-[var(--text-faint)] mb-1";
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><label className={labelCls}>{label}</label>{children}</div>;
@@ -207,37 +208,37 @@ export default function LogPage() {
   if (loading) return <LoadingSpinner className="min-h-screen" />;
 
   return (
-    <div className="px-4 pt-6 pb-8 space-y-5">
+    <div className="px-5 pt-6 pb-8 space-y-5">
       {/* Header */}
       <div>
-        <h1 className="text-xl font-bold text-white">Log allenamento</h1>
+        <h1 className="text-[22px] font-bold" style={{ color: "var(--text-primary)" }}>Log allenamento</h1>
         {todaySession ? (
-          <p className="text-sm text-slate-400 mt-0.5">
-            📅 <span className="text-white font-medium">{todaySession.title || SESSION_TYPE_LABELS[todaySession.type]}</span>
+          <p className="text-[13px] mt-0.5" style={{ color: "var(--text-muted)" }}>
+            📅 <span className="font-medium" style={{ color: "var(--text-secondary)" }}>{todaySession.title || SESSION_TYPE_LABELS[todaySession.type]}</span>
             {" · "}{SESSION_TYPE_LABELS[todaySession.type]}
           </p>
         ) : (
-          <p className="text-sm text-slate-400 mt-0.5">Sessione libera</p>
+          <p className="text-[13px] mt-0.5" style={{ color: "var(--text-muted)" }}>Sessione libera</p>
         )}
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-5">
 
         {/* ── Date picker ── */}
-        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
-          <label className="block text-xs text-slate-400 mb-1.5">Data allenamento</label>
+        <div className="card p-4">
+          <label className={labelCls}>Data allenamento</label>
           <input
             type="date"
             value={logDate}
             max={new Date().toISOString().slice(0, 10)}
             onChange={(e) => setLogDate(e.target.value)}
-            className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary"
+            className={inputCls}
           />
         </div>
 
         {/* ── Free session type toggle ── */}
         {!todaySession && (
-          <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
+          <div className="card p-4">
             <p className={labelCls}>Tipo di allenamento</p>
             <div className="flex gap-2">
               {(["strength", "cardio"] as const).map((t) => (
@@ -245,9 +246,11 @@ export default function LogPage() {
                   key={t}
                   type="button"
                   onClick={() => setFreeType(t)}
-                  className={`flex-1 py-2 rounded-xl text-sm font-medium transition-colors ${
-                    freeType === t ? "bg-primary text-white" : "bg-slate-700 text-slate-300"
-                  }`}
+                  className="flex-1 py-2.5 rounded-xl text-[13px] font-semibold transition-all"
+                  style={freeType === t
+                    ? { background: "var(--green-primary)", color: "#fff" }
+                    : { background: "var(--bg-surface-3)", color: "var(--text-muted)" }
+                  }
                 >
                   {t === "strength" ? "💪 Forza / Mobilità" : "🏃 Cardio / Corsa"}
                 </button>
@@ -259,14 +262,14 @@ export default function LogPage() {
         {/* ── Exercise-by-exercise (Strength) ── */}
         {showStrength && (
           <div className="space-y-3">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Esercizi</p>
+            <p className="text-xs font-semibold section-label">Esercizi</p>
             {exerciseLogs.map((ex, i) => {
               const restSec = todaySession?.exercises[i]?.restSeconds;
               return (
-                <div key={i} className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
+                <div key={i} className="card overflow-hidden">
                   <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
-                    <span className="text-sm font-semibold text-white">{ex.name}</span>
-                    <span className="text-xs text-slate-500">
+                    <span className="text-[14px] font-semibold" style={{ color: "var(--text-primary)" }}>{ex.name}</span>
+                    <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>
                       prev. {ex.plannedSets}×{ex.plannedReps}
                       {ex.plannedLoad ? ` @ ${ex.plannedLoad}` : ""}
                     </span>
@@ -321,11 +324,11 @@ export default function LogPage() {
         {showCircuit && (
           <div className="space-y-3">
             {/* Round counter */}
-            <div className="bg-slate-800 rounded-2xl p-4 border border-yellow-400/30">
+            <div className="card p-4" style={{ borderColor: "rgba(250,204,21,0.25)" }}>
               <div className="flex items-center justify-between mb-3">
-                <label className="text-sm font-semibold text-white">
+                <label className="text-[14px] font-semibold" style={{ color: "var(--text-primary)" }}>
                   Round completati
-                  {todaySession?.targetRounds && <span className="text-xs text-slate-400 font-normal ml-2">(target: {todaySession.targetRounds})</span>}
+                  {todaySession?.targetRounds && <span className="text-[11px] font-normal ml-2" style={{ color: "var(--text-muted)" }}>(target: {todaySession.targetRounds})</span>}
                 </label>
                 <span className="text-xl font-bold text-yellow-400">{circuitLog.roundsCompleted}</span>
               </div>
@@ -336,12 +339,12 @@ export default function LogPage() {
             {/* Exercises per round */}
             {exerciseLogs.length > 0 && (
               <div className="space-y-2">
-                <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Esercizi del circuit</p>
+                <p className="text-xs font-semibold section-label">Esercizi del circuit</p>
                 {exerciseLogs.map((ex, i) => (
-                  <div key={i} className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
+                  <div key={i} className="card overflow-hidden">
                     <div className="px-4 py-2.5 border-b border-slate-700 flex items-center justify-between">
-                      <span className="text-sm font-semibold text-white">{ex.name}</span>
-                      <span className="text-xs text-slate-500">{ex.plannedReps} reps{ex.plannedLoad ? ` · ${ex.plannedLoad}` : ""}</span>
+                      <span className="text-[14px] font-semibold" style={{ color: "var(--text-primary)" }}>{ex.name}</span>
+                      <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>{ex.plannedReps} reps{ex.plannedLoad ? ` · ${ex.plannedLoad}` : ""}</span>
                     </div>
                     <div className="px-4 py-3 grid grid-cols-2 gap-2">
                       <Field label="Reps effettive">
@@ -357,7 +360,7 @@ export default function LogPage() {
             )}
 
             {/* Recupero tra round + timer */}
-            <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-3">
+            <div className="card p-4 space-y-3">
               <Field label="Recupero effettivo tra round (sec)">
                 <input type="number" min={0} value={circuitLog.restBetweenRoundsSeconds ?? ""} onChange={(e) => setCircuitLog((p) => ({ ...p, restBetweenRoundsSeconds: e.target.value ? +e.target.value : undefined }))} placeholder={todaySession?.restBetweenRoundsSeconds?.toString() ?? "90"} className={inputCls} />
               </Field>
@@ -376,8 +379,8 @@ export default function LogPage() {
             </div>
 
             {/* HR / calories for circuit */}
-            <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-3">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Metriche cardio</p>
+            <div className="card p-4 space-y-3">
+              <p className="text-xs font-semibold section-label">Metriche cardio</p>
               <div className="grid grid-cols-2 gap-2">
                 <Field label="FC media (bpm)">
                   <input type="number" min={0} value={circuitLog.avgHeartRate ?? ""} onChange={(e) => setCircuitLog((p) => ({ ...p, avgHeartRate: e.target.value ? +e.target.value : undefined }))} placeholder="150" className={inputCls} />
@@ -395,7 +398,7 @@ export default function LogPage() {
                   {(["z1","z2","z3","z4","z5"] as const).map((z, idx) => (
                     <div key={z} className="text-center">
                       <div className={`text-[10px] font-semibold mb-1 ${["text-blue-400","text-green-400","text-yellow-400","text-orange-400","text-red-400"][idx]}`}>Z{idx+1}</div>
-                      <input type="number" min={0} value={circuitLog.hrZoneMinutes?.[z] ?? ""} onChange={(e) => setCircuitLog((p) => ({ ...p, hrZoneMinutes: { ...p.hrZoneMinutes, [z]: e.target.value ? +e.target.value : undefined } }))} placeholder="0" className="w-full bg-slate-900 border border-slate-600 rounded-lg px-1 py-2 text-sm text-white text-center placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-primary" />
+                      <input type="number" min={0} value={circuitLog.hrZoneMinutes?.[z] ?? ""} onChange={(e) => setCircuitLog((p) => ({ ...p, hrZoneMinutes: { ...p.hrZoneMinutes, [z]: e.target.value ? +e.target.value : undefined } }))} placeholder="0" className={inputCls + " text-center px-1 py-2"} />
                     </div>
                   ))}
                 </div>
@@ -406,8 +409,8 @@ export default function LogPage() {
 
         {/* ── Cardio metrics ── */}
         {showCardio && (
-          <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-3">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Metriche cardio</p>
+          <div className="card p-4 space-y-3">
+            <p className="text-xs font-semibold section-label mb-1">Metriche cardio</p>
 
             <div className="grid grid-cols-2 gap-2">
               <Field label="FC media (bpm)">
@@ -472,7 +475,7 @@ export default function LogPage() {
                       value={cardioLog.hrZoneMinutes?.[z] ?? ""}
                       onChange={(e) => updateZone(z, e.target.value)}
                       placeholder="0"
-                      className="w-full bg-slate-900 border border-slate-600 rounded-lg px-1 py-2 text-sm text-white text-center placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-primary"
+                      className={inputCls + " text-center px-1 py-2"}
                     />
                   </div>
                 ))}
@@ -497,12 +500,12 @@ export default function LogPage() {
               </button>
             )}
 
-            <div className="bg-slate-800 rounded-2xl p-4 border border-rose-500/20">
+            <div className="card p-4" style={{ borderColor: "rgba(251,113,133,0.20)" }}>
               <div className="flex items-center justify-between mb-3">
-                <label className="text-sm font-semibold text-white">
+                <label className="text-[14px] font-semibold" style={{ color: "var(--text-primary)" }}>
                   Round completati
                   {todaySession?.hiitBlocks && (
-                    <span className="text-xs text-slate-400 font-normal ml-2">
+                    <span className="text-[11px] font-normal ml-2" style={{ color: "var(--text-muted)" }}>
                       (target: {todaySession.hiitBlocks.reduce((s, b) => s + b.rounds, 0)})
                     </span>
                   )}
@@ -519,14 +522,14 @@ export default function LogPage() {
             </div>
 
             {hiitLog.totalTimeSeconds != null && (
-              <p className="text-xs text-slate-400 text-center">
+              <p className="text-[11px] text-center" style={{ color: "var(--text-muted)" }}>
                 Tempo totale:{" "}
                 {String(Math.floor(hiitLog.totalTimeSeconds / 60)).padStart(2, "0")}:{String(hiitLog.totalTimeSeconds % 60).padStart(2, "0")}
               </p>
             )}
 
-            <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-3">
-              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Metriche</p>
+            <div className="card p-4 space-y-3">
+              <p className="text-xs font-semibold section-label">Metriche</p>
               <div className="grid grid-cols-2 gap-2">
                 <Field label="FC media (bpm)">
                   <input type="number" min={0} value={hiitLog.avgHeartRate ?? ""}
@@ -549,9 +552,9 @@ export default function LogPage() {
         )}
 
         {/* ── Duration ── */}
-        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
+        <div className="card p-4">
           <div className="flex items-center justify-between mb-3">
-            <label className="text-sm font-semibold text-white">Durata effettiva</label>
+            <label className="text-[14px] font-semibold" style={{ color: "var(--text-primary)" }}>Durata effettiva</label>
             <span className="text-xl font-bold text-primary">{durationMin} min</span>
           </div>
           <input
@@ -566,12 +569,12 @@ export default function LogPage() {
         </div>
 
         {/* ── Overall RPE ── */}
-        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
+        <div className="card p-4">
           <div className="flex items-center justify-between mb-3">
-            <label className="text-sm font-semibold text-white">
+            <label className="text-[14px] font-semibold" style={{ color: "var(--text-primary)" }}>
               RPE percepito globale
               {todaySession && (
-                <span className="text-xs text-slate-400 font-normal ml-2">(target: {todaySession.targetRPE})</span>
+                <span className="text-[11px] font-normal ml-2" style={{ color: "var(--text-muted)" }}>(target: {todaySession.targetRPE})</span>
               )}
             </label>
             <span className="text-xl font-bold text-primary">{rpe}/10</span>
@@ -588,8 +591,8 @@ export default function LogPage() {
         </div>
 
         {/* ── Mood ── */}
-        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
-          <label className="text-sm font-semibold text-white block mb-3">Umore</label>
+        <div className="card p-4">
+          <label className="text-[14px] font-semibold block mb-3" style={{ color: "var(--text-primary)" }}>Umore</label>
           <div className="flex justify-between">
             {[1,2,3,4,5].map(n => (
               <button key={n} type="button" onClick={() => setMood(n)}
@@ -601,8 +604,8 @@ export default function LogPage() {
         </div>
 
         {/* ── Energy ── */}
-        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
-          <label className="text-sm font-semibold text-white block mb-3">Livello energia</label>
+        <div className="card p-4">
+          <label className="text-[14px] font-semibold block mb-3" style={{ color: "var(--text-primary)" }}>Livello energia</label>
           <div className="flex justify-between">
             {[1,2,3,4,5].map(n => (
               <button key={n} type="button" onClick={() => setEnergy(n)}
@@ -614,14 +617,14 @@ export default function LogPage() {
         </div>
 
         {/* ── Notes ── */}
-        <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
-          <label className="text-sm font-semibold text-white block mb-2">Note generali</label>
+        <div className="card p-4">
+          <label className="text-[14px] font-semibold block mb-2" style={{ color: "var(--text-primary)" }}>Note generali</label>
           <textarea
             rows={3}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             placeholder="Come ti sei sentito? Difficoltà, PR, osservazioni…"
-            className="w-full bg-slate-900 border border-slate-600 rounded-xl px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-primary resize-none"
+            className={inputCls + " resize-none rounded-xl"}
           />
         </div>
 
@@ -632,7 +635,7 @@ export default function LogPage() {
         <button
           type="submit"
           disabled={saving}
-          className="w-full bg-primary hover:bg-primary-600 disabled:opacity-60 text-white font-bold py-4 rounded-2xl text-base transition-colors"
+          className="btn-primary disabled:opacity-60"
         >
           {saving ? "Salvataggio…" : "Salva allenamento"}
         </button>
@@ -651,11 +654,13 @@ export default function LogPage() {
 
       {/* ── Rest timer overlay ── */}
       {activeTimer && (
-        <div className={`fixed bottom-20 left-4 right-4 z-50 rounded-2xl p-4 shadow-2xl border transition-all ${
-          activeTimer.remaining === 0
-            ? "bg-green-600/20 border-green-500/40"
-            : "bg-slate-800 border-primary/40"
-        }`}>
+        <div
+          className="fixed bottom-20 left-4 right-4 z-50 rounded-2xl p-4 shadow-2xl border transition-all"
+          style={activeTimer.remaining === 0
+            ? { background: "rgba(22,163,74,0.15)", borderColor: "rgba(22,163,74,0.30)" }
+            : { background: "var(--bg-surface-1)", borderColor: "var(--green-border)" }
+          }
+        >
           {activeTimer.remaining === 0 ? (
             <p className="text-green-400 font-bold text-center text-base">✓ Recupero completato!</p>
           ) : (

@@ -10,11 +10,22 @@ import type { AthleteAdherence } from "@/lib/firestore";
 import type { Program, WorkoutLog } from "@/types";
 import { SESSION_TYPE_LABELS, MOOD_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import Avatar from "@/components/Avatar";
 import Link from "next/link";
+
+const SESSION_TYPE_COLORS: Record<string, { color: string; bg: string }> = {
+  strength: { color: "#60A5FA", bg: "rgba(59,130,246,0.12)" },
+  hiit:     { color: "#FB7185", bg: "rgba(244,63,94,0.12)" },
+  cardio:   { color: "#FBBF24", bg: "rgba(245,158,11,0.12)" },
+  circuit:  { color: "#FACC15", bg: "rgba(250,204,21,0.12)" },
+};
+
+type View = "coach" | "personal";
 
 export default function DashboardPage() {
   const { user, coach, signOut } = useAuth();
   const router = useRouter();
+  const [view, setView] = useState<View>("coach");
   const [program, setProgram] = useState<Program | null>(null);
   const [recentLogs, setRecentLogs] = useState<WorkoutLog[]>([]);
   const [loading, setLoading] = useState(true);
@@ -23,10 +34,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (!user) return;
-    const athleteId = user.uid;
     Promise.all([
       getActiveProgram(user.uid),
-      getLogs(user.uid, athleteId, 5),
+      getLogs(user.uid, user.uid, 5),
       getAthletesAdherence(user.uid).catch(() => [] as AthleteAdherence[]),
     ]).then(([prog, logs, adh]) => {
       setProgram(prog);
@@ -52,244 +62,307 @@ export default function DashboardPage() {
 
   if (loading) return <LoadingSpinner className="min-h-screen" />;
 
+  const sessionColors = todaySession ? (SESSION_TYPE_COLORS[todaySession.type] ?? SESSION_TYPE_COLORS.strength) : null;
+
   return (
-    <div className="px-4 pt-6 space-y-6">
+    <div className="px-5 pt-6 space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <p className="text-slate-400 text-sm capitalize">
+          <p className="text-[13px] capitalize" style={{ color: "var(--text-muted)" }}>
             {format(new Date(), "EEEE d MMMM", { locale: it })}
           </p>
-          <h1 className="text-xl font-bold text-white">
-            Ciao, {coach?.name || "Coach"} 👋
+          <h1 className="text-[24px] font-bold mt-0.5" style={{ color: "var(--text-primary)" }}>
+            Ciao, {coach?.name?.split(" ")[0] || "Coach"} 👋
           </h1>
         </div>
         <button
           onClick={handleSignOut}
-          className="text-slate-400 hover:text-white transition-colors p-2"
+          className="w-9 h-9 rounded-full flex items-center justify-center transition-opacity active:opacity-60"
+          style={{ background: "var(--bg-surface-2)" }}
           aria-label="Esci"
         >
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-            <path strokeLinecap="round" strokeLinejoin="round" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H6a2 2 0 01-2-2V7a2 2 0 012-2h5a2 2 0 012 2v1" />
+          <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--text-muted)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+            <path d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a2 2 0 01-2 2H6a2 2 0 01-2-2V7a2 2 0 012-2h5a2 2 0 012 2v1" />
           </svg>
         </button>
       </div>
 
-      {/* Today's session */}
-      <section>
-        <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">
-          Sessione di oggi
-        </h2>
-        {todaySession ? (
-          <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
-            {/* Tappable header */}
-            <div
-              className="p-4 cursor-pointer active:bg-slate-700/50 transition-colors"
-              onClick={() => setSessionExpanded((v) => !v)}
+      {/* Segmented switch */}
+      <div
+        className="flex p-[3px] rounded-[12px] gap-[3px]"
+        style={{ background: "var(--bg-surface-1)" }}
+      >
+        {(["coach", "personal"] as View[]).map((v) => {
+          const active = view === v;
+          return (
+            <button
+              key={v}
+              onClick={() => setView(v)}
+              className="flex-1 py-2 rounded-[10px] text-[13px] font-semibold transition-all duration-150"
+              style={{
+                background: active ? "var(--green-primary)" : "transparent",
+                color: active ? "#fff" : "var(--text-muted)",
+              }}
             >
-              <div className="flex items-start justify-between">
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs font-medium bg-primary/20 text-primary-300 px-2 py-0.5 rounded-full">
-                    {SESSION_TYPE_LABELS[todaySession.type]}
-                  </span>
-                  <h3 className="text-lg font-semibold text-white mt-1">{todaySession.title}</h3>
-                </div>
-                <div className="flex items-center gap-3 shrink-0 ml-2">
-                  <div className="text-right">
-                    <p className="text-xs text-slate-400">RPE</p>
-                    <p className="text-xl font-bold text-primary">{todaySession.targetRPE}</p>
-                  </div>
-                  <svg
-                    className={`w-5 h-5 text-slate-500 transition-transform ${sessionExpanded ? "rotate-90" : ""}`}
-                    fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
-                  >
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                  </svg>
-                </div>
-              </div>
-              <div className="flex gap-4 text-sm text-slate-400 mt-2">
-                <span>⏱ {todaySession.durationMin} min</span>
-                <span>💪 {todaySession.exercises.length} esercizi</span>
-              </div>
-            </div>
+              {v === "coach" ? "Coach" : "Il mio allenamento"}
+            </button>
+          );
+        })}
+      </div>
 
-            {/* Expandable exercise list */}
-            {sessionExpanded && todaySession.exercises.length > 0 && (
-              <div className="border-t border-slate-700 px-4 py-3">
-                <ul className="space-y-2">
-                  {todaySession.exercises.map((ex, i) => (
-                    <li key={i} className="text-sm text-slate-300">
-                      <div className="flex gap-2 items-baseline">
-                        <span className="text-slate-500 shrink-0">{i + 1}.</span>
-                        <span className="font-medium">{ex.name}</span>
-                        <span className="text-slate-500">{ex.sets}×{ex.reps}</span>
-                        {ex.load && <span className="text-slate-500">@ {ex.load}</span>}
+      {/* ── COACH VIEW ── */}
+      {view === "coach" && (
+        <>
+          <div className="grid grid-cols-3 gap-2.5">
+            <StatCard label="Atleti attivi" value={String(adherence.filter(a => daysSince(a.lastLogDate) < 7).length)} />
+            <StatCard label="Sessioni sett." value={String(weekLogs.length)} />
+            <StatCard
+              label="Da monitorare"
+              value={String(adherence.filter(a => daysSince(a.lastLogDate) >= 5).length)}
+              valueColor="var(--status-error, #EF4444)"
+            />
+          </div>
+
+          {adherence.length > 0 ? (
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="section-label">I tuoi atleti</h2>
+                <Link href="/athletes" className="text-[12px] font-semibold" style={{ color: "var(--green-primary)" }}>
+                  Tutti →
+                </Link>
+              </div>
+              <div className="card overflow-hidden">
+                {[...adherence]
+                  .sort((a, b) =>
+                    daysSince(a.lastLogDate) === daysSince(b.lastLogDate)
+                      ? a.weekSessions - b.weekSessions
+                      : daysSince(b.lastLogDate) - daysSince(a.lastLogDate)
+                  )
+                  .map(({ athlete, weekSessions, lastLogDate }) => {
+                    const days = daysSince(lastLogDate);
+                    const inactive = days >= 5;
+                    return (
+                      <Link
+                        key={athlete.id}
+                        href={`/athletes/${athlete.id}`}
+                        className="flex items-center gap-3 px-4 py-3"
+                        style={{ borderBottom: "1px solid var(--border-default)" }}
+                      >
+                        <div className="relative shrink-0">
+                          <Avatar name={athlete.name} size={36} />
+                          {inactive && (
+                            <span
+                              className="absolute -top-0.5 -right-0.5 w-3 h-3 rounded-full animate-pulse-dot"
+                              style={{ background: "#EF4444", border: "2px solid var(--bg-surface-1)" }}
+                            />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-[14px] font-medium truncate" style={{ color: "var(--text-primary)" }}>
+                            {athlete.name}
+                          </p>
+                          <p className="text-[11px] mt-0.5" style={{ color: "var(--text-faint)" }}>
+                            {weekSessions} {weekSessions === 1 ? "sessione" : "sessioni"} questa settimana
+                          </p>
+                        </div>
+                        <p
+                          className="text-[12px] shrink-0 font-medium"
+                          style={{ color: inactive ? "#EF4444" : "var(--text-faint)" }}
+                        >
+                          {lastLogDate === null
+                            ? "mai loggato"
+                            : days === 0 ? "oggi"
+                            : days === 1 ? "ieri"
+                            : `${days} gg fa`}
+                        </p>
+                      </Link>
+                    );
+                  })}
+              </div>
+            </section>
+          ) : (
+            <div className="card px-4 py-8 text-center">
+              <p className="text-[14px] mb-3" style={{ color: "var(--text-muted)" }}>Nessun atleta ancora</p>
+              <Link href="/athletes" className="text-[14px] font-semibold" style={{ color: "var(--green-primary)" }}>
+                Aggiungi atleti →
+              </Link>
+            </div>
+          )}
+        </>
+      )}
+
+      {/* ── PERSONAL VIEW ── */}
+      {view === "personal" && (
+        <>
+          <section>
+            <h2 className="section-label mb-3">Sessione di oggi</h2>
+
+            {todaySession ? (
+              <div className="card-hero overflow-hidden" style={{ border: `1px solid ${sessionColors?.bg ?? "var(--border-default)"}` }}>
+                <div
+                  className="px-4 pt-4 pb-3 cursor-pointer active:opacity-80 transition-opacity"
+                  onClick={() => setSessionExpanded((v) => !v)}
+                >
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex-1 min-w-0">
+                      <span
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold"
+                        style={{ background: sessionColors?.bg, color: sessionColors?.color }}
+                      >
+                        {SESSION_TYPE_LABELS[todaySession.type]}
+                      </span>
+                      <h3 className="text-[17px] font-bold mt-1.5 truncate" style={{ color: "var(--text-primary)" }}>
+                        {todaySession.title}
+                      </h3>
+                      <div className="flex gap-4 mt-1.5 text-[12px]" style={{ color: "var(--text-muted)" }}>
+                        <span>⏱ {todaySession.durationMin} min</span>
+                        <span>💪 {todaySession.exercises.length} esercizi</span>
+                      </div>
+                    </div>
+                    <div className="flex flex-col items-end shrink-0 gap-1">
+                      <p className="text-[10px] font-medium uppercase" style={{ color: "var(--text-faint)" }}>RPE</p>
+                      <p className="text-[28px] font-black tabular leading-none" style={{ color: sessionColors?.color ?? "var(--green-primary)" }}>
+                        {todaySession.targetRPE}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex justify-center mt-2">
+                    <svg
+                      width="16" height="16"
+                      className={`transition-transform duration-200 ${sessionExpanded ? "rotate-180" : ""}`}
+                      fill="none" viewBox="0 0 24 24" stroke="var(--text-faintest)" strokeWidth={2}
+                    >
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                    </svg>
+                  </div>
+                </div>
+
+                {sessionExpanded && todaySession.exercises.length > 0 && (
+                  <div className="px-4 py-3 space-y-2" style={{ borderTop: "1px solid var(--border-default)" }}>
+                    {todaySession.exercises.map((ex, i) => (
+                      <div key={i} className="flex items-baseline gap-2 text-[13px]">
+                        <span className="shrink-0 w-5 text-right" style={{ color: "var(--text-faintest)" }}>{i + 1}.</span>
+                        <span className="font-medium" style={{ color: "var(--text-secondary)" }}>{ex.name}</span>
+                        <span style={{ color: "var(--text-faint)" }}>{ex.sets}×{ex.reps}</span>
+                        {ex.load && <span style={{ color: "var(--text-faint)" }}>@ {ex.load}</span>}
                         {ex.restSeconds && (
-                          <span className="text-slate-600 text-xs ml-auto shrink-0">
+                          <span className="ml-auto shrink-0 text-[11px]" style={{ color: "var(--text-faintest)" }}>
                             {ex.restSeconds >= 60
                               ? `${Math.floor(ex.restSeconds / 60)}m${ex.restSeconds % 60 ? (ex.restSeconds % 60) + "s" : ""}`
                               : `${ex.restSeconds}s`} rec
                           </span>
                         )}
                       </div>
-                      {ex.notes && <p className="text-xs text-slate-500 ml-4 mt-0.5 italic">{ex.notes}</p>}
-                    </li>
-                  ))}
-                </ul>
-                {todaySession.notes && (
-                  <p className="text-xs text-slate-500 mt-3 pt-2 border-t border-slate-700 italic">{todaySession.notes}</p>
+                    ))}
+                    {todaySession.notes && (
+                      <p className="text-[12px] italic mt-2 pt-2" style={{ borderTop: "1px solid var(--border-default)", color: "var(--text-faint)" }}>
+                        {todaySession.notes}
+                      </p>
+                    )}
+                  </div>
+                )}
+
+                <div className="px-4 pb-4 pt-1">
+                  <Link
+                    href="/log"
+                    className="block w-full text-center text-white font-bold py-3 rounded-xl text-[15px] transition-opacity active:opacity-80"
+                    style={{ background: sessionColors?.color ?? "var(--green-primary)" }}
+                  >
+                    Registra allenamento
+                  </Link>
+                </div>
+              </div>
+            ) : (
+              <div className="card px-4 py-5 text-center">
+                {program ? (
+                  <>
+                    <p className="text-[14px] mb-3" style={{ color: "var(--text-muted)" }}>
+                      Nessuna sessione programmata oggi 🎉
+                    </p>
+                    <Link href="/log" className="text-[14px] font-semibold" style={{ color: "var(--green-primary)" }}>
+                      Log sessione libera →
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-[14px] mb-3" style={{ color: "var(--text-muted)" }}>
+                      Nessun programma attivo
+                    </p>
+                    <Link href="/programs" className="text-[14px] font-semibold" style={{ color: "var(--green-primary)" }}>
+                      Crea un programma →
+                    </Link>
+                  </>
                 )}
               </div>
             )}
+          </section>
 
-            {/* CTA */}
-            <div className="px-4 pb-4">
-              <Link
-                href="/log"
-                className="block w-full text-center bg-primary hover:bg-primary-600 text-white font-semibold py-2.5 rounded-xl transition-colors"
-              >
-                Registra allenamento
-              </Link>
+          <section>
+            <h2 className="section-label mb-3">Questa settimana</h2>
+            <div className="grid grid-cols-2 gap-2.5">
+              <StatCard label="Allenamenti" value={String(weekLogs.length)} />
+              <StatCard label="RPE medio" value={String(avgRPE)} />
             </div>
-          </div>
-        ) : (
-          <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 text-center">
-            {program ? (
-              <>
-                <p className="text-slate-400 mb-3">Nessuna sessione programmata oggi 🎉</p>
-                <Link href="/log" className="text-primary text-sm font-medium">
-                  Log sessione libera →
-                </Link>
-              </>
-            ) : (
-              <>
-                <p className="text-slate-400 mb-3">Nessun programma attivo</p>
-                <Link href="/programs" className="text-primary text-sm font-medium">
-                  Crea un programma →
-                </Link>
-              </>
-            )}
-          </div>
-        )}
-      </section>
+          </section>
 
-      {/* Weekly stats */}
-      <section>
-        <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider mb-3">
-          Questa settimana
-        </h2>
-        <div className="grid grid-cols-2 gap-3">
-          <StatCard label="Allenamenti" value={String(weekLogs.length)} />
-          <StatCard label="RPE medio" value={String(avgRPE)} />
-        </div>
-      </section>
-
-      {/* Athletes adherence */}
-      {adherence.length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-              I tuoi atleti
-            </h2>
-            <Link href="/athletes" className="text-primary text-xs font-medium">
-              Tutti
-            </Link>
-          </div>
-          <div className="bg-slate-800 rounded-2xl border border-slate-700 divide-y divide-slate-700/50 overflow-hidden">
-            {[...adherence]
-              .sort((a, b) => daysSince(a.lastLogDate) === daysSince(b.lastLogDate)
-                ? a.weekSessions - b.weekSessions
-                : daysSince(b.lastLogDate) - daysSince(a.lastLogDate))
-              .map(({ athlete, weekSessions, lastLogDate }) => {
-                const days = daysSince(lastLogDate);
-                const inactive = days >= 5;
-                return (
-                  <Link
-                    key={athlete.id}
-                    href={`/athletes/${athlete.id}`}
-                    className="flex items-center gap-3 px-4 py-3"
-                  >
-                    <div className="relative shrink-0">
-                      <div className="w-9 h-9 rounded-full bg-primary/20 flex items-center justify-center">
-                        <span className="text-primary font-bold text-sm">
-                          {athlete.name.charAt(0).toUpperCase()}
-                        </span>
+          {recentLogs.length > 0 && (
+            <section>
+              <div className="flex items-center justify-between mb-3">
+                <h2 className="section-label">Ultimi log</h2>
+                <Link href="/history" className="text-[12px] font-semibold" style={{ color: "var(--green-primary)" }}>
+                  Vedi tutti →
+                </Link>
+              </div>
+              <div className="space-y-2">
+                {recentLogs.slice(0, 3).map((log) => {
+                  const tc = SESSION_TYPE_COLORS[log.plannedSession?.type ?? ""] ?? SESSION_TYPE_COLORS.strength;
+                  return (
+                    <Link
+                      key={log.id}
+                      href={`/history/${log.id}`}
+                      className="flex items-center gap-3 card-2 px-4 py-3 active:opacity-80 transition-opacity"
+                    >
+                      <span className="text-xl">{MOOD_LABELS[log.mood]}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[14px] font-medium truncate" style={{ color: "var(--text-primary)" }}>
+                          {log.plannedSession?.title || "Sessione libera"}
+                        </p>
+                        <p className="text-[12px] mt-0.5" style={{ color: "var(--text-faint)" }}>
+                          {format(log.date.toDate(), "d MMM", { locale: it })} · {log.actualDurationMin} min
+                        </p>
                       </div>
-                      {inactive && (
-                        <span className="absolute -top-0.5 -right-0.5 w-3 h-3 bg-red-500 rounded-full border-2 border-slate-800" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-white text-sm font-medium truncate">{athlete.name}</p>
-                      <p className="text-xs text-slate-500">
-                        {weekSessions} {weekSessions === 1 ? "sessione" : "sessioni"} negli ultimi 7 giorni
-                      </p>
-                    </div>
-                    <p className={`text-xs shrink-0 ${inactive ? "text-red-400 font-medium" : "text-slate-500"}`}>
-                      {lastLogDate === null
-                        ? "mai loggato"
-                        : days === 0
-                        ? "oggi"
-                        : days === 1
-                        ? "ieri"
-                        : `${days} gg fa`}
-                    </p>
-                  </Link>
-                );
-              })}
-          </div>
-        </section>
+                      <span className="text-[13px] font-black tabular shrink-0" style={{ color: tc.color }}>
+                        {log.perceivedRPE}
+                      </span>
+                    </Link>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+        </>
       )}
 
-      {/* Recent logs */}
-      {recentLogs.length > 0 && (
-        <section>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-slate-400 uppercase tracking-wider">
-              Ultimi log
-            </h2>
-            <Link href="/history" className="text-primary text-xs font-medium">
-              Vedi tutti
-            </Link>
-          </div>
-          <div className="space-y-2">
-            {recentLogs.slice(0, 3).map((log) => (
-              <Link
-                key={log.id}
-                href={`/history/${log.id}`}
-                className="flex items-center gap-3 bg-slate-800 rounded-xl p-3 border border-slate-700"
-              >
-                <div className="text-2xl">{MOOD_LABELS[log.mood]}</div>
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-white truncate">
-                    {log.plannedSession?.title || "Sessione libera"}
-                  </p>
-                  <p className="text-xs text-slate-400">
-                    {format(log.date.toDate(), "d MMM", { locale: it })} · {log.actualDurationMin} min · RPE {log.perceivedRPE}
-                  </p>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
-      <div className="h-2" />
+      <div className="h-4" />
     </div>
   );
 }
 
-/** Whole days since the date; Infinity when never logged (sorts to the top) */
 function daysSince(d: Date | null): number {
   if (!d) return Infinity;
   return Math.floor((Date.now() - d.getTime()) / (24 * 60 * 60 * 1000));
 }
 
-function StatCard({ label, value }: { label: string; value: string }) {
+function StatCard({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
   return (
-    <div className="bg-slate-800 rounded-2xl p-3 border border-slate-700 flex flex-col items-center justify-center gap-1">
-      <span className="text-2xl font-bold text-white">{value}</span>
-      <span className="text-xs text-slate-400 text-center">{label}</span>
+    <div className="card px-4 py-4 flex flex-col items-center justify-center gap-1 text-center">
+      <span className="text-[28px] font-black tabular leading-none" style={{ color: valueColor ?? "var(--text-primary)" }}>
+        {value}
+      </span>
+      <span className="text-[11px]" style={{ color: "var(--text-faint)" }}>
+        {label}
+      </span>
     </div>
   );
 }
