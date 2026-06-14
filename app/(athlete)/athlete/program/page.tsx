@@ -1,14 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAthletePrograms, getGroupsForAthlete, getGroupPrograms } from "@/lib/firestore";
 import type { AthleteProgram } from "@/types";
 import { SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
-/** Personal program, or a shared group program tagged with its group name */
-type DisplayProgram = AthleteProgram & { groupName?: string };
+/** Personal program, or a shared group program tagged with its group name and id */
+type DisplayProgram = AthleteProgram & { groupName?: string; groupId?: string };
 
 const TYPE_COLOR: Record<string, string> = {
   strength: "bg-blue-500",
@@ -36,7 +37,7 @@ export default function AthleteProgramPage() {
         Promise.all(
           groups.map(async (g) =>
             (await getGroupPrograms(coachId, g.id)).map(
-              (p): DisplayProgram => ({ ...p, groupName: g.name })
+              (p): DisplayProgram => ({ ...p, groupName: g.name, groupId: g.id })
             )
           )
         ).then((nested) => nested.flat())
@@ -150,41 +151,52 @@ export default function AthleteProgramPage() {
                           {week.sessions.map((session, si) => {
                             const k = `${ci}-${wi}-${si}`;
                             const isOpen = expandedKeys.has(k);
+                            const logUrl = selected
+                              ? `/athlete/log?programId=${selected.id}&ci=${ci}&wi=${wi}&si=${si}${selected.groupId ? `&groupId=${selected.groupId}` : ""}`
+                              : "/athlete/log";
                             return (
                               <div key={si}>
-                                <button
-                                  type="button"
-                                  className="w-full flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-700/30 transition-colors"
-                                  onClick={() => toggleKey(k)}
-                                >
-                                  <div className={`w-2 h-2 rounded-full shrink-0 ${TYPE_COLOR[session.type] ?? "bg-slate-500"}`} />
-                                  <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2 flex-wrap">
-                                      {session.scheduledDate ? (
-                                        <span className="text-xs font-medium text-primary">📅 {session.scheduledDate}</span>
-                                      ) : (
-                                        <span className="text-xs text-slate-400">{DAYS[session.dayOfWeek]}</span>
-                                      )}
-                                      <span className="text-xs text-slate-600">·</span>
-                                      <span className="text-xs text-slate-400">{SESSION_TYPE_LABELS[session.type]}</span>
-                                      {session.title && (
-                                        <>
-                                          <span className="text-xs text-slate-600">·</span>
-                                          <span className="text-xs font-semibold text-white">{session.title}</span>
-                                        </>
-                                      )}
-                                    </div>
-                                    <p className="text-xs text-slate-500 mt-0.5">
-                                      {session.exercises.length} esercizi · {session.durationMin} min · RPE {session.targetRPE}
-                                    </p>
-                                  </div>
-                                  <svg
-                                    className={`w-4 h-4 text-slate-500 transition-transform shrink-0 ${isOpen ? "rotate-90" : ""}`}
-                                    fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                                <div className="flex items-center">
+                                  <button
+                                    type="button"
+                                    className="flex-1 flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-700/30 transition-colors"
+                                    onClick={() => toggleKey(k)}
                                   >
-                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                                  </svg>
-                                </button>
+                                    <div className={`w-2 h-2 rounded-full shrink-0 ${TYPE_COLOR[session.type] ?? "bg-slate-500"}`} />
+                                    <div className="flex-1 min-w-0">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        {session.scheduledDate ? (
+                                          <span className="text-xs font-medium text-primary">📅 {session.scheduledDate}</span>
+                                        ) : (
+                                          <span className="text-xs text-slate-400">{DAYS[session.dayOfWeek]}</span>
+                                        )}
+                                        <span className="text-xs text-slate-600">·</span>
+                                        <span className="text-xs text-slate-400">{SESSION_TYPE_LABELS[session.type]}</span>
+                                        {session.title && (
+                                          <>
+                                            <span className="text-xs text-slate-600">·</span>
+                                            <span className="text-xs font-semibold text-white">{session.title}</span>
+                                          </>
+                                        )}
+                                      </div>
+                                      <p className="text-xs text-slate-500 mt-0.5">
+                                        {session.exercises.length} esercizi · {session.durationMin} min · RPE {session.targetRPE}
+                                      </p>
+                                    </div>
+                                    <svg
+                                      className={`w-4 h-4 text-slate-500 transition-transform shrink-0 ${isOpen ? "rotate-90" : ""}`}
+                                      fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}
+                                    >
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                                    </svg>
+                                  </button>
+                                  <Link
+                                    href={logUrl}
+                                    className="shrink-0 mx-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
+                                  >
+                                    Logga →
+                                  </Link>
+                                </div>
 
                                 {isOpen && (
                                   <div className="px-4 pb-4 pt-1 space-y-2 border-t border-slate-700/50 bg-slate-900/30">

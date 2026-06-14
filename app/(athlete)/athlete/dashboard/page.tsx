@@ -32,6 +32,29 @@ export default function AthleteDashboardPage() {
   const [recentLogs, setRecentLogs] = useState<WorkoutLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"solo" | "group">("solo");
+  const [stravaStatus, setStravaStatus] = useState<"idle" | "connecting" | "connected" | "error">("idle");
+
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search).get("strava");
+    if (p === "connected") setStravaStatus("connected");
+    else if (p === "error" || p === "denied") setStravaStatus("error");
+  }, []);
+
+  const connectStrava = async () => {
+    if (!user) return;
+    setStravaStatus("connecting");
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/strava/auth", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const { url, error } = await res.json();
+      if (error || !url) { setStravaStatus("error"); return; }
+      window.location.href = url;
+    } catch {
+      setStravaStatus("error");
+    }
+  };
 
   useEffect(() => {
     if (!user || !athleteAccess) return;
@@ -193,6 +216,9 @@ export default function AthleteDashboardPage() {
         </>
       )}
 
+      {/* Strava connect */}
+      <StravaConnectCard status={stravaStatus} onConnect={connectStrava} />
+
       {/* Recent logs */}
       {recentLogs.length > 0 && (
         <section>
@@ -301,5 +327,64 @@ function TodaySessionCard({
         </Link>
       </div>
     </div>
+  );
+}
+
+function StravaConnectCard({
+  status,
+  onConnect,
+}: {
+  status: "idle" | "connecting" | "connected" | "error";
+  onConnect: () => void;
+}) {
+  if (status === "connected") {
+    return (
+      <div
+        className="card flex items-center gap-3 px-4 py-3"
+        style={{ borderColor: "rgba(252,76,2,0.2)" }}
+      >
+        <StravaLogo />
+        <p className="flex-1 text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
+          Strava connesso
+        </p>
+        <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold" style={{ background: "rgba(252,76,2,0.12)", color: "#FC4C02" }}>
+          ✓ Attivo
+        </span>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={onConnect}
+      disabled={status === "connecting"}
+      className="card w-full flex items-center gap-3 px-4 py-3 text-left active:opacity-70 transition-opacity disabled:opacity-50"
+      style={{ borderColor: "rgba(252,76,2,0.15)" }}
+    >
+      <StravaLogo />
+      <div className="flex-1 min-w-0">
+        <p className="text-[13px] font-semibold" style={{ color: "var(--text-primary)" }}>
+          {status === "connecting" ? "Connessione in corso…" : "Connetti Strava"}
+        </p>
+        <p className="text-[11px] mt-0.5" style={{ color: "var(--text-faint)" }}>
+          {status === "error"
+            ? "Connessione fallita. Riprova."
+            : "Importa automaticamente dati FC, distanza e calorie"}
+        </p>
+      </div>
+      <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--text-faint)" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M9 5l7 7-7 7" />
+      </svg>
+    </button>
+  );
+}
+
+function StravaLogo() {
+  return (
+    <svg width="28" height="28" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="40" height="40" rx="8" fill="#FC4C02" />
+      <path d="M17 28l-5-9h4l1 2 1-2h4l-5 9z" fill="white" opacity="0.6" />
+      <path d="M23 28l-5-9h4l5 9h-4z" fill="white" />
+    </svg>
   );
 }

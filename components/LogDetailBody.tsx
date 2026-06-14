@@ -159,6 +159,77 @@ export default function LogDetailBody({ log }: { log: WorkoutLog }) {
         </div>
       )}
 
+      {/* Laps */}
+      {log.laps && log.laps.length > 0 && (
+        <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-slate-700 flex items-center justify-between">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              Lap / Ripetute
+            </p>
+            <span className="text-xs text-slate-500">{log.laps.length} lap</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs">
+              <thead>
+                <tr className="border-b border-slate-700/60">
+                  <th className="px-4 py-2 text-left font-medium text-slate-500">#</th>
+                  <th className="px-2 py-2 text-right font-medium text-slate-500">Dist.</th>
+                  <th className="px-2 py-2 text-right font-medium text-slate-500">Tempo</th>
+                  <th className="px-2 py-2 text-right font-medium text-slate-500">Passo</th>
+                  <th className="px-2 py-2 text-right font-medium text-slate-500">FC media</th>
+                  <th className="px-2 py-2 text-right font-medium text-slate-500">FC max</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-700/40">
+                {log.laps.map((lap) => {
+                  const isFast = log.laps!.length > 2 && lap.avgPaceMinPerKm
+                    ? lap.avgPaceMinPerKm === [...log.laps!]
+                        .filter(l => l.avgPaceMinPerKm)
+                        .sort((a, b) => a.avgPaceMinPerKm!.localeCompare(b.avgPaceMinPerKm!))[0]?.avgPaceMinPerKm
+                    : false;
+                  return (
+                    <tr key={lap.index} className={isFast ? "bg-primary/5" : ""}>
+                      <td className="px-4 py-2.5 text-slate-400 font-medium">{lap.index}</td>
+                      <td className="px-2 py-2.5 text-right text-white">
+                        {lap.distanceM >= 1000
+                          ? `${(lap.distanceM / 1000).toFixed(2)} km`
+                          : `${lap.distanceM} m`}
+                      </td>
+                      <td className="px-2 py-2.5 text-right text-white font-medium tabular-nums">
+                        {`${String(Math.floor(lap.elapsedSec / 60)).padStart(2,"0")}:${String(lap.elapsedSec % 60).padStart(2,"0")}`}
+                      </td>
+                      <td className={`px-2 py-2.5 text-right font-medium tabular-nums ${isFast ? "text-primary" : "text-slate-300"}`}>
+                        {lap.avgPaceMinPerKm ? `${lap.avgPaceMinPerKm}/km` : "—"}
+                      </td>
+                      <td className="px-2 py-2.5 text-right text-slate-300 tabular-nums">
+                        {lap.avgHR ? `${lap.avgHR}` : "—"}
+                      </td>
+                      <td className="px-2 py-2.5 text-right text-slate-500 tabular-nums">
+                        {lap.maxHR ? `${lap.maxHR}` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+          {/* Best lap highlight */}
+          {(() => {
+            const withPace = log.laps.filter(l => l.avgPaceMinPerKm);
+            if (withPace.length < 2) return null;
+            const best = [...withPace].sort((a, b) => a.avgPaceMinPerKm!.localeCompare(b.avgPaceMinPerKm!))[0];
+            return (
+              <div className="px-4 py-2 border-t border-slate-700/60">
+                <p className="text-xs text-slate-500">
+                  🏅 Lap più veloce: <span className="text-primary font-semibold">#{best.index} · {best.avgPaceMinPerKm}/km</span>
+                  {best.avgHR ? <span className="text-slate-500 ml-2">· FC {best.avgHR} bpm</span> : null}
+                </p>
+              </div>
+            );
+          })()}
+        </div>
+      )}
+
       {/* Notes */}
       {log.notes && (
         <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">

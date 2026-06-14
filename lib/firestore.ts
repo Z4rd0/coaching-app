@@ -611,7 +611,12 @@ export async function getAthletesAdherence(coachId: string): Promise<AthleteAdhe
 export function getTodaySession(program: Program | AthleteProgram, forDate?: Date): Session | null {
   const today = forDate ? new Date(forDate) : new Date();
   today.setHours(0, 0, 0, 0);
-  const todayISO = today.toISOString().slice(0, 10);
+  // Use local date components — toISOString() gives UTC date which is off by 1 day in UTC+ zones
+  const todayISO = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, "0"),
+    String(today.getDate()).padStart(2, "0"),
+  ].join("-");
 
   // Pass 1: any session with an explicit scheduledDate matching today wins
   for (const cycle of program.cycles) {
@@ -622,13 +627,13 @@ export function getTodaySession(program: Program | AthleteProgram, forDate?: Dat
     }
   }
 
+  // Pass 2: startDate-based calendar placement (startDate should be the Monday of week 1)
   if (program.startDate) {
     const start = new Date(program.startDate + "T00:00:00");
     let totalWeeks = 0;
     for (const cycle of program.cycles) {
       for (const week of cycle.weeks) {
         for (const session of week.sessions) {
-          // Skip sessions that are pinned to a specific date — already handled above
           if (session.scheduledDate) continue;
           const d = new Date(start);
           d.setDate(start.getDate() + totalWeeks * 7 + session.dayOfWeek);
@@ -637,9 +642,10 @@ export function getTodaySession(program: Program | AthleteProgram, forDate?: Dat
         totalWeeks++;
       }
     }
-    return null;
+    // Fall through to DOW matching as fallback (handles non-Monday startDate or off-by-one)
   }
 
+  // Pass 3: day-of-week fallback (Mon=0 … Sun=6)
   const dow = (today.getDay() + 6) % 7;
   for (const cycle of program.cycles) {
     for (const week of cycle.weeks) {

@@ -223,6 +223,17 @@ export interface AIAnalysis {
   nextSessionTip: string;
 }
 
+/** One lap/split imported from Strava or manually entered */
+export interface Lap {
+  index: number;
+  distanceM: number;     // meters
+  elapsedSec: number;    // seconds
+  avgPaceMinPerKm?: string;
+  avgHR?: number;
+  maxHR?: number;
+  avgCadence?: number;
+}
+
 export interface WorkoutLog {
   id: string;
   date: Timestamp;
@@ -244,6 +255,8 @@ export interface WorkoutLog {
   cardioLog?: CardioLog;
   circuitLog?: CircuitLog;
   hiitLog?: HiitLog;
+  /** Lap/split data — populated when importing from Strava or Garmin */
+  laps?: Lap[];
   /** Feedback written by the coach on this workout — shown to the athlete */
   coachComment?: string;
   /** Legacy: old logs may carry an AI analysis from the removed feature */

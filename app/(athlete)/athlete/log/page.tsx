@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState, Suspense } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Timestamp } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
 import {
@@ -11,7 +11,7 @@ import {
   getGroupsForAthlete,
   getActiveGroupProgram,
 } from "@/lib/firestore";
-import type { Group, Cycle, Session, WorkoutLog, ExerciseLog, CardioLog, CircuitLog, HiitLog } from "@/types";
+import type { Group, Cycle, Session, WorkoutLog, ExerciseLog, CardioLog, CircuitLog, HiitLog, Lap } from "@/types";
 import { MOOD_LABELS, ENERGY_LABELS, SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import HiitTimer from "@/components/HiitTimer";
@@ -84,9 +84,29 @@ const emptyCardioLog = (): CardioLog => ({
   hrZoneMinutes: {},
 });
 
-export default function AthleteLogPage() {
+interface StravaActivitySummary {
+  id: number;
+  name: string;
+  type: string;
+  start_date: string;
+  elapsed_time: number;
+  moving_time: number;
+  distance: number;
+  average_heartrate?: number;
+  max_heartrate?: number;
+  calories?: number;
+  average_speed?: number;
+}
+
+function AthleteLogPageInner() {
   const { user, athleteAccess } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const qProgramId = searchParams.get("programId");
+  const qCi = searchParams.get("ci");
+  const qWi = searchParams.get("wi");
+  const qSi = searchParams.get("si");
+  const qGroupId = searchParams.get("groupId");
 
   const [options, setOptions] = useState<SessionOption[]>([]);
   const [selectedKey, setSelectedKey] = useState<string>("");
@@ -109,6 +129,11 @@ export default function AthleteLogPage() {
   const [hiitLog, setHiitLog] = useState<HiitLog>({ roundsCompleted: 0 });
   const [showHiitTimer, setShowHiitTimer] = useState(false);
   const [activeTimer, setActiveTimer] = useState<{ label: string; remaining: number; total: number } | null>(null);
+  const [stravaActivities, setStravaActivities] = useState<StravaActivitySummary[] | null>(null);
+  const [stravaLoading, setStravaLoading] = useState(false);
+  const [stravaError, setStravaError] = useState("");
+  const [laps, setLaps] = useState<Lap[]>([]);
+  const [lapsLoading, setLapsLoading] = useState(false);
 
   const applySelection = (key: string, opts: SessionOption[]) => {
     setSelectedKey(key);
@@ -138,8 +163,16 @@ export default function AthleteLogPage() {
       }
       setOptions(opts);
 
-      // Pre-select today's planned session as a convenience — just a suggestion,
-      // the athlete can switch to any session (or none) regardless of the day
+      // If arriving from the program page, pre-select that specific session
+      if (qProgramId && qCi !== null && qWi !== null && qSi !== null) {
+        const preselectKey = `${qGroupId ?? "p"}|${qProgramId}|${qCi}|${qWi}|${qSi}`;
+        if (opts.find((o) => o.key === preselectKey)) {
+          applySelection(preselectKey, opts);
+          return;
+        }
+      }
+
+      // Otherwise pre-select today's planned session as a convenience
       let suggested: Session | null = prog ? getTodaySession(prog) : null;
       if (!suggested) {
         for (const { p } of groupProgs) {
@@ -170,6 +203,66 @@ export default function AthleteLogPage() {
 
   const startTimer = (seconds: number, label: string) =>
     setActiveTimer({ label, remaining: seconds, total: seconds });
+
+  const loadStravaActivities = async () => {
+    if (!user) return;
+    setStravaLoading(true);
+    setStravaError("");
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch("/api/strava/activities", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        if (res.status === 404) {
+          window.location.href = "/athlete/dashboard";
+        } else {
+          setStravaError(data.error ?? "Errore Strava");
+        }
+        return;
+      }
+      setStravaActivities(data.activities);
+    } catch {
+      setStravaError("Errore di rete");
+    } finally {
+      setStravaLoading(false);
+    }
+  };
+
+  const applyStravaActivity = async (a: StravaActivitySummary) => {
+    if (a.average_heartrate) updateCardio({ avgHeartRate: Math.round(a.average_heartrate) });
+    if (a.max_heartrate) updateCardio({ maxHeartRate: Math.round(a.max_heartrate) });
+    if (a.distance) setDistanceKm(String(Math.round(a.distance / 10) / 100));
+    if (a.calories) updateCardio({ calories: Math.round(a.calories) });
+    if (a.average_speed && a.average_speed > 0) {
+      const minPerKm = 1000 / a.average_speed / 60;
+      const mins = Math.floor(minPerKm);
+      const secs = Math.round((minPerKm - mins) * 60);
+      updateCardio({ avgPaceMinPerKm: `${mins}:${String(secs).padStart(2, "0")}` });
+    }
+    if (a.moving_time) setDurationMin(Math.round(a.moving_time / 60));
+    setStravaActivities(null);
+    setLaps([]);
+
+    // Fetch laps in background — non bloccante
+    if (!user) return;
+    setLapsLoading(true);
+    try {
+      const token = await user.getIdToken();
+      const res = await fetch(`/api/strava/laps?activityId=${a.id}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setLaps(data.laps ?? []);
+      }
+    } catch {
+      // laps are optional, silently ignore errors
+    } finally {
+      setLapsLoading(false);
+    }
+  };
 
   const selectedOption = options.find((o) => o.key === selectedKey) ?? null;
   const selectedSession = selectedOption?.session ?? null;
@@ -223,6 +316,7 @@ export default function AthleteLogPage() {
         ...(finalCardio ? { cardioLog: finalCardio } : {}),
         ...(finalCircuit ? { circuitLog: finalCircuit } : {}),
         ...(finalHiit ? { hiitLog: finalHiit } : {}),
+        ...(laps.length > 0 ? { laps } : {}),
       };
 
       const docRef = await createLog(coachId, athleteId, logData);
@@ -461,7 +555,86 @@ export default function AthleteLogPage() {
 
         {showCardio && (
           <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-3">
-            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1">Metriche cardio</p>
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Metriche cardio</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={loadStravaActivities}
+                  disabled={stravaLoading}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-slate-600 text-slate-400 text-xs hover:border-orange-500/60 hover:text-orange-400 transition-colors disabled:opacity-50"
+                >
+                  <svg viewBox="0 0 24 24" className="w-3.5 h-3.5 fill-current">
+                    <path d="M10.5 18L6 9h3l1.5 3 1.5-3h3L10.5 18zM15 18l-4.5-9h3L15 12l1.5-3h3L15 18z" />
+                  </svg>
+                  {stravaLoading ? "…" : "Strava"}
+                </button>
+              <label className="flex items-center gap-1.5 cursor-pointer px-2.5 py-1 rounded-lg border border-slate-600 text-slate-400 text-xs hover:border-primary hover:text-primary transition-colors">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Garmin CSV
+                <input
+                  type="file"
+                  accept=".csv"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    const reader = new FileReader();
+                    reader.onload = (ev) => {
+                      const text = ev.target?.result as string;
+                      const parsed = parseGarminCSV(text);
+                      if (parsed.avgHR) updateCardio({ avgHeartRate: parsed.avgHR });
+                      if (parsed.maxHR) updateCardio({ maxHeartRate: parsed.maxHR });
+                      if (parsed.distanceKm) setDistanceKm(String(parsed.distanceKm));
+                      if (parsed.calories) updateCardio({ calories: parsed.calories });
+                      if (parsed.avgPace) updateCardio({ avgPaceMinPerKm: parsed.avgPace });
+                      if (parsed.durationMin) setDurationMin(parsed.durationMin);
+                    };
+                    reader.readAsText(file);
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              </div>
+            </div>
+            {stravaError && (
+              <p className="text-xs text-red-400">{stravaError}</p>
+            )}
+            {stravaActivities && stravaActivities.length > 0 && (
+              <div className="rounded-xl border border-slate-700 overflow-hidden">
+                <p className="px-3 py-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider bg-slate-900/50 border-b border-slate-700">
+                  Ultime attività Strava — scegli quella da importare
+                </p>
+                <div className="divide-y divide-slate-700/60">
+                  {stravaActivities.slice(0, 8).map((a) => {
+                    const km = a.distance ? `${Math.round(a.distance / 10) / 100} km` : null;
+                    const mins = a.moving_time ? Math.round(a.moving_time / 60) : null;
+                    const d = new Date(a.start_date);
+                    const label = `${d.getDate()}/${d.getMonth() + 1} · ${a.name}`;
+                    return (
+                      <button
+                        key={a.id}
+                        type="button"
+                        onClick={() => applyStravaActivity(a)}
+                        className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-slate-700/40 transition-colors"
+                      >
+                        <div>
+                          <p className="text-sm font-medium text-white">{label}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">
+                            {[a.type, km, mins ? `${mins} min` : null, a.average_heartrate ? `FC ${Math.round(a.average_heartrate)}` : null].filter(Boolean).join(" · ")}
+                          </p>
+                        </div>
+                        <svg className="w-4 h-4 text-slate-500 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                        </svg>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             <div className="grid grid-cols-2 gap-2">
               <Field label="FC media (bpm)">
                 <input type="number" min={0} value={cardioLog.avgHeartRate ?? ""} onChange={(e) => updateCardio({ avgHeartRate: e.target.value ? +e.target.value : undefined })} placeholder="150" className={inputCls} />
@@ -487,6 +660,57 @@ export default function AthleteLogPage() {
                 ))}
               </div>
             </div>
+          </div>
+        )}
+
+        {/* ── Laps preview (dopo import Strava) ── */}
+        {(lapsLoading || laps.length > 0) && (showCardio || showHiit) && (
+          <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
+            <div className="px-4 py-2.5 border-b border-slate-700 flex items-center justify-between">
+              <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+                Lap / Ripetute
+              </p>
+              {lapsLoading && <span className="text-xs text-slate-500">Caricamento…</span>}
+              {!lapsLoading && laps.length > 0 && (
+                <span className="text-xs text-slate-500">{laps.length} lap</span>
+              )}
+            </div>
+            {!lapsLoading && laps.length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-700/60">
+                      <th className="px-4 py-2 text-left font-medium text-slate-500">#</th>
+                      <th className="px-2 py-2 text-right font-medium text-slate-500">Dist.</th>
+                      <th className="px-2 py-2 text-right font-medium text-slate-500">Tempo</th>
+                      <th className="px-2 py-2 text-right font-medium text-slate-500">Passo</th>
+                      <th className="px-2 py-2 text-right font-medium text-slate-500">FC</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700/40">
+                    {laps.map((lap) => (
+                      <tr key={lap.index}>
+                        <td className="px-4 py-2 text-slate-400">{lap.index}</td>
+                        <td className="px-2 py-2 text-right text-white">
+                          {lap.distanceM >= 1000
+                            ? `${(lap.distanceM / 1000).toFixed(2)} km`
+                            : `${lap.distanceM} m`}
+                        </td>
+                        <td className="px-2 py-2 text-right text-white">
+                          {`${String(Math.floor(lap.elapsedSec / 60)).padStart(2,"0")}:${String(lap.elapsedSec % 60).padStart(2,"0")}`}
+                        </td>
+                        <td className="px-2 py-2 text-right text-slate-300">
+                          {lap.avgPaceMinPerKm ? `${lap.avgPaceMinPerKm}/km` : "—"}
+                        </td>
+                        <td className="px-2 py-2 text-right text-slate-300">
+                          {lap.avgHR ? `${lap.avgHR}` : "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
         )}
 
@@ -668,4 +892,82 @@ export default function AthleteLogPage() {
       )}
     </div>
   );
+}
+
+export default function AthleteLogPage() {
+  return (
+    <Suspense fallback={<LoadingSpinner className="min-h-screen" />}>
+      <AthleteLogPageInner />
+    </Suspense>
+  );
+}
+
+// ── Garmin CSV parser ────────────────────────────────────────────────────────
+
+function parseCSVRow(line: string): string[] {
+  const result: string[] = [];
+  let inQuotes = false;
+  let current = "";
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      inQuotes = !inQuotes;
+    } else if (ch === "," && !inQuotes) {
+      result.push(current.replace(/^"|"$/g, "").trim());
+      current = "";
+    } else {
+      current += ch;
+    }
+  }
+  result.push(current.replace(/^"|"$/g, "").trim());
+  return result;
+}
+
+function parseGarminCSV(text: string): {
+  avgHR?: number;
+  maxHR?: number;
+  distanceKm?: number;
+  calories?: number;
+  avgPace?: string;
+  durationMin?: number;
+} {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return {};
+
+  const headers = parseCSVRow(lines[0]).map((h) => h.toLowerCase());
+  // Use the last data row (most recent activity in a multi-row export)
+  const dataRow = parseCSVRow(lines[lines.length - 1]);
+
+  const get = (...keywords: string[]): string | undefined => {
+    for (const kw of keywords) {
+      const idx = headers.findIndex((h) => h.includes(kw));
+      if (idx !== -1 && dataRow[idx]) return dataRow[idx].trim();
+    }
+  };
+
+  const result: ReturnType<typeof parseGarminCSV> = {};
+
+  const avgHR = get("avg hr", "average heart", "fc media", "frequenza cardiaca media");
+  if (avgHR) result.avgHR = parseInt(avgHR);
+
+  const maxHR = get("max hr", "max heart", "fc max", "frequenza cardiaca massima");
+  if (maxHR) result.maxHR = parseInt(maxHR);
+
+  const dist = get("distance", "distanza");
+  if (dist) result.distanceKm = parseFloat(dist.replace(",", "."));
+
+  const cal = get("calories", "calorie");
+  if (cal) result.calories = parseInt(cal);
+
+  const pace = get("avg pace", "average pace", "passo medio");
+  if (pace && /\d+:\d+/.test(pace)) result.avgPace = pace;
+
+  const timeStr = get("time", "elapsed time", "durata", "duration");
+  if (timeStr) {
+    const parts = timeStr.split(":").map(Number);
+    if (parts.length === 3) result.durationMin = Math.round(parts[0] * 60 + parts[1] + parts[2] / 60);
+    else if (parts.length === 2) result.durationMin = parts[0];
+  }
+
+  return result;
 }
