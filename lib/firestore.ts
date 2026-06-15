@@ -627,7 +627,11 @@ export function getTodaySession(program: Program | AthleteProgram, forDate?: Dat
     }
   }
 
-  // Pass 2: startDate-based calendar placement (startDate should be the Monday of week 1)
+  // Pass 2: startDate-based calendar placement (startDate should be the Monday of week 1).
+  // When a program is anchored to a calendar (startDate set), the date placement is
+  // authoritative: if nothing lands on today (rest day, or the program has ended), we
+  // return null rather than surfacing a stale session from another week. The day-of-week
+  // fallback below would otherwise show "un allenamento molto vecchio".
   if (program.startDate) {
     const start = new Date(program.startDate + "T00:00:00");
     let totalWeeks = 0;
@@ -642,10 +646,11 @@ export function getTodaySession(program: Program | AthleteProgram, forDate?: Dat
         totalWeeks++;
       }
     }
-    // Fall through to DOW matching as fallback (handles non-Monday startDate or off-by-one)
+    return null;
   }
 
-  // Pass 3: day-of-week fallback (Mon=0 … Sun=6)
+  // Pass 3: day-of-week fallback for undated programs (recurring weekly templates with
+  // no startDate). Mon=0 … Sun=6.
   const dow = (today.getDay() + 6) % 7;
   for (const cycle of program.cycles) {
     for (const week of cycle.weeks) {
