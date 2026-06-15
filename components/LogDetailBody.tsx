@@ -14,7 +14,14 @@ const ZONE_LABEL = ["Z1 Recupero", "Z2 Aerobica", "Z3 Soglia", "Z4 Anaerobica", 
  * markup here avoids two long files going out of sync (e.g. the previous
  * coach page never showed the HIIT log).
  */
-export default function LogDetailBody({ log }: { log: WorkoutLog }) {
+export default function LogDetailBody({
+  log,
+  hideCoachComment = false,
+}: {
+  log: WorkoutLog;
+  /** Coach view renders its own editable feedback box, so it hides the read-only one here. */
+  hideCoachComment?: boolean;
+}) {
   const zones = log.cardioLog?.hrZoneMinutes;
   const totalZoneMin = zones ? Object.values(zones).reduce((s, v) => s + (v ?? 0), 0) : 0;
 
@@ -29,7 +36,7 @@ export default function LogDetailBody({ log }: { log: WorkoutLog }) {
       </div>
 
       {/* Coach comment */}
-      {log.coachComment && (
+      {!hideCoachComment && log.coachComment && (
         <div className="bg-primary/10 border border-primary/30 rounded-2xl px-4 py-3">
           <p className="text-xs text-primary font-medium mb-1">💬 Dal tuo coach</p>
           <p className="text-sm text-slate-200">{log.coachComment}</p>

@@ -4,11 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
-import { getAthlete, getAthletePrograms, getLogs, updateAthlete, updateLogComment } from "@/lib/firestore";
+import { getAthlete, getAthletePrograms, getLogs, updateAthlete } from "@/lib/firestore";
 import { buildSingleLogExport, buildFullExport, downloadMarkdown } from "@/lib/exportLogs";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "";
 import type { Athlete, AthleteProgram, WorkoutLog } from "@/types";
+import { SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
@@ -31,9 +32,6 @@ export default function AthleteDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [exportingAll, setExportingAll] = useState(false);
   const [copiedLogId, setCopiedLogId] = useState<string | null>(null);
-  const [commentingId, setCommentingId] = useState<string | null>(null);
-  const [commentText, setCommentText] = useState("");
-  const [savingComment, setSavingComment] = useState(false);
 
   // Edit form state
   const [name, setName] = useState("");
@@ -81,21 +79,6 @@ export default function AthleteDetailPage() {
     navigator.clipboard.writeText(joinLink);
     setLinkCopied(true);
     setTimeout(() => setLinkCopied(false), 2000);
-  };
-
-  const handleSaveComment = async (logId: string) => {
-    if (!user) return;
-    setSavingComment(true);
-    try {
-      await updateLogComment(user.uid, id, logId, commentText.trim());
-      setLogs((prev) =>
-        prev.map((l) => (l.id === logId ? { ...l, coachComment: commentText.trim() } : l))
-      );
-      setCommentingId(null);
-      setCommentText("");
-    } finally {
-      setSavingComment(false);
-    }
   };
 
   const handleDelete = async () => {
@@ -347,88 +330,49 @@ export default function AthleteDetailPage() {
         ) : (
           <div className="space-y-2">
             {logs.map((log) => (
-              <div
+              <Link
                 key={log.id}
-                className="bg-slate-800 rounded-2xl px-4 py-3 border border-slate-700"
+                href={`/athletes/${id}/logs/${log.id}`}
+                className="block bg-slate-800 rounded-2xl px-4 py-3 border border-slate-700 hover:border-slate-600 transition-colors"
               >
-                <div className="flex items-center justify-between">
-                  <p className="text-white text-sm font-medium">
-                    {format(log.date.toDate(), "EEE d MMM", { locale: it })}
-                  </p>
-                  <div className="flex items-center gap-3 text-xs text-slate-400">
-                    <span>RPE {log.perceivedRPE}</span>
-                    <span>{log.actualDurationMin} min</span>
-                    <span className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">
-                      {log.writtenBy === "athlete" ? "Atleta" : "Coach"}
-                    </span>
-                    <button
-                      onClick={() => handleCopyLog(log)}
-                      className="text-slate-500 hover:text-primary transition-colors"
-                      title="Copia sessione per Claude"
-                    >
-                      {copiedLogId === log.id ? (
-                        <svg className="w-3.5 h-3.5 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                        </svg>
-                      ) : (
-                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                          <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                      )}
-                    </button>
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-medium truncate">
+                      {log.plannedSession?.title || "Sessione libera"}
+                    </p>
+                    <p className="text-slate-500 text-xs">
+                      {format(log.date.toDate(), "EEE d MMM", { locale: it })}
+                      {log.plannedSession && ` · ${SESSION_TYPE_LABELS[log.plannedSession.type]}`}
+                    </p>
                   </div>
+                  <button
+                    onClick={(e) => { e.preventDefault(); handleCopyLog(log); }}
+                    className="text-slate-500 hover:text-primary transition-colors p-1 shrink-0"
+                    title="Copia sessione per Claude"
+                  >
+                    {copiedLogId === log.id ? (
+                      <svg className="w-4 h-4 text-primary" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                      </svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                      </svg>
+                    )}
+                  </button>
+                  <svg className="w-4 h-4 text-slate-600 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
                 </div>
-                {log.notes && (
-                  <p className="text-slate-500 text-xs mt-1 truncate">{log.notes}</p>
-                )}
-
-                {/* Coach comment */}
-                {commentingId === log.id ? (
-                  <div className="mt-2 space-y-2">
-                    <textarea
-                      value={commentText}
-                      onChange={(e) => setCommentText(e.target.value)}
-                      rows={2}
-                      placeholder="Scrivi un feedback per l'atleta…"
-                      className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-primary resize-none"
-                    />
-                    <div className="flex gap-2">
-                      <button
-                        type="button"
-                        onClick={() => { setCommentingId(null); setCommentText(""); }}
-                        className="flex-1 py-1.5 border border-slate-600 text-slate-400 rounded-lg text-xs"
-                      >
-                        Annulla
-                      </button>
-                      <button
-                        type="button"
-                        disabled={savingComment}
-                        onClick={() => handleSaveComment(log.id)}
-                        className="flex-1 py-1.5 bg-primary text-white rounded-lg text-xs font-semibold disabled:opacity-60"
-                      >
-                        {savingComment ? "Salvo…" : "Salva commento"}
-                      </button>
-                    </div>
-                  </div>
-                ) : log.coachComment ? (
-                  <button
-                    type="button"
-                    onClick={() => { setCommentingId(log.id); setCommentText(log.coachComment ?? ""); }}
-                    className="mt-2 w-full text-left bg-primary/5 border border-primary/20 rounded-xl px-3 py-2"
-                  >
-                    <p className="text-xs text-primary font-medium mb-0.5">💬 Il tuo commento</p>
-                    <p className="text-xs text-slate-300">{log.coachComment}</p>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => { setCommentingId(log.id); setCommentText(""); }}
-                    className="mt-2 text-xs text-slate-500 hover:text-primary transition-colors"
-                  >
-                    💬 Commenta
-                  </button>
-                )}
-              </div>
+                <div className="flex items-center gap-3 text-xs text-slate-400 mt-2">
+                  <span>RPE {log.perceivedRPE}</span>
+                  <span>{log.actualDurationMin} min</span>
+                  <span className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">
+                    {log.writtenBy === "athlete" ? "Atleta" : "Coach"}
+                  </span>
+                  {log.coachComment && <span className="text-primary">💬 Commentato</span>}
+                </div>
+              </Link>
             ))}
           </div>
         )}
