@@ -121,13 +121,29 @@ export async function getCoach(coachId: string): Promise<Coach | null> {
   return { id: snap.id, ...snap.data() } as Coach;
 }
 
-export async function createCoach(uid: string, name: string, email: string): Promise<void> {
-  await setDoc(coachRef(uid), {
-    name,
-    email,
-    createdAt: Timestamp.now(),
-    settings: {},
-  });
+export async function createCoach(
+  uid: string,
+  name: string,
+  email: string,
+  opts?: { specialization?: string }
+): Promise<void> {
+  await setDoc(
+    coachRef(uid),
+    {
+      name,
+      email,
+      createdAt: Timestamp.now(),
+      settings: {},
+      status: "active",
+      plan: "free",
+      exempt: false,
+      onboardingCompletedAt: Timestamp.now(),
+      ...(opts?.specialization ? { specialization: opts.specialization } : {}),
+    },
+    // merge keeps any unrelated fields already on the doc. Founders never reach
+    // this path (they have a doc → detected as coach → skip onboarding).
+    { merge: true }
+  );
 }
 
 // ─── Athletes (coach-managed profiles) ───────────────────────────────────────

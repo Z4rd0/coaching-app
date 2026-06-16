@@ -25,7 +25,9 @@ export default function AuthPage() {
     try {
       const role = await signInWithGoogle();
       document.cookie = "coach-auth=1; path=/; max-age=2592000";
-      router.replace(role === "athlete" ? "/athlete/dashboard" : "/");
+      router.replace(
+        role === "athlete" ? "/athlete/dashboard" : role === "coach" ? "/" : "/onboarding"
+      );
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : "Errore di autenticazione";
       if (!msg.includes("popup-closed-by-user") && !msg.includes("cancelled-popup-request")) {

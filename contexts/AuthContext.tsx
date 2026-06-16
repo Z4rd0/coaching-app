@@ -25,6 +25,7 @@ interface AuthContextValue {
   signIn: (email: string, password: string) => Promise<UserRole>;
   signUp: (name: string, email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<UserRole>;
+  completeCoachOnboarding: (name: string, specialization?: string) => Promise<void>;
   signOut: () => Promise<void>;
 }
 
@@ -61,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setUser(firebaseUser);
         if (firebaseUser) {
           // Try coach first — saves a read for coach users
-          let coachData = await firestoreRead(() => getCoach(firebaseUser.uid));
+          const coachData = await firestoreRead(() => getCoach(firebaseUser.uid));
           if (coachData) {
             setCoach(coachData);
             setRole("coach");
@@ -82,14 +83,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               // locking the account into the wrong role. Leave role null.
               setRole(null);
             } else {
-              // Neither coach nor athlete — self-heal: this user authenticated
-              // but has no coach doc (likely created during an earlier offline
-              // signup or had it deleted). Recreate it so the app works.
-              const fallbackName = firebaseUser.displayName ?? firebaseUser.email?.split("@")[0] ?? "Coach";
-              await createCoach(firebaseUser.uid, fallbackName, firebaseUser.email ?? "");
-              coachData = await firestoreRead(() => getCoach(firebaseUser.uid));
-              setCoach(coachData);
-              setRole("coach");
+              // Authenticated but neither coach nor athlete: a brand-new signup
+              // (e.g. via Google) or a coach whose doc was lost. Don't silently
+              // mint a coach here — leave role null so the (app) layout sends
+              // them to /onboarding, where the coach profile is created
+              // explicitly. (See completeCoachOnboarding.)
+              setRole(null);
             }
           }
         } else {
@@ -130,11 +129,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setRole("coach");
   };
 
-  /** Google sign-in: existing users keep their role; brand-new users become coaches
-   *  (athletes get their access doc via the join/invite flow instead). */
+  /** Google sign-in: existing users keep their role; brand-new users get role
+   *  null (caller routes them to /onboarding to create the coach profile).
+   *  Athletes get their access doc via the join/invite flow instead. */
   const signInWithGoogle = async (): Promise<UserRole> => {
     const cred = await signInWithPopup(getFirebaseAuth(), new GoogleAuthProvider());
-    let coachData = await firestoreRead(() => getCoach(cred.user.uid));
+    const coachData = await firestoreRead(() => getCoach(cred.user.uid));
     if (coachData) {
       setCoach(coachData);
       setRole("coach");
@@ -146,12 +146,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setRole("athlete");
       return "athlete";
     }
-    const name = cred.user.displayName ?? cred.user.email?.split("@")[0] ?? "Coach";
-    await createCoach(cred.user.uid, name, cred.user.email ?? "");
-    coachData = await firestoreRead(() => getCoach(cred.user.uid));
+    // Brand-new account — defer to explicit onboarding.
+    setRole(null);
+    return null;
+  };
+
+  /** Finalize a coach account: create the /coaches/{uid} doc explicitly and
+   *  flip the in-memory role to "coach". Called from the /onboarding page. */
+  const completeCoachOnboarding = async (name: string, specialization?: string) => {
+    const current = getFirebaseAuth().currentUser;
+    if (!current) throw new Error("Non autenticato");
+    await createCoach(current.uid, name.trim(), current.email ?? "", { specialization });
+    const coachData = await firestoreRead(() => getCoach(current.uid));
     setCoach(coachData);
     setRole("coach");
-    return "coach";
   };
 
   const signOut = async () => {
@@ -162,7 +170,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, coach, athleteAccess, role, loading, signIn, signUp, signInWithGoogle, signOut }}>
+    <AuthContext.Provider value={{ user, coach, athleteAccess, role, loading, signIn, signUp, signInWithGoogle, completeCoachOnboarding, signOut }}>
       {children}
     </AuthContext.Provider>
   );

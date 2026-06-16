@@ -8,7 +8,20 @@ export interface Coach {
   email: string;
   createdAt: Timestamp;
   settings: Record<string, unknown>;
+  /** Account lifecycle — "active" once onboarding is complete */
+  status?: "active" | "pending_onboarding";
+  /** Billing plan. "founder" = the owner's account: free & unlimited forever */
+  plan?: "free" | "pro" | "founder";
+  /** When true, bypasses all plan limits and billing (founder accounts).
+   *  The Stripe webhook must never overwrite an exempt account. */
+  exempt?: boolean;
+  /** Optional coaching specialization, collected at onboarding */
+  specialization?: string;
+  onboardingCompletedAt?: Timestamp;
 }
+
+/** Max active athletes allowed on the free plan (enforced server-side) */
+export const FREE_PLAN_ATHLETE_LIMIT = 5;
 
 // ─── Athlete ──────────────────────────────────────────────────────────────────
 
