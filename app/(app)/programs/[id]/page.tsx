@@ -10,6 +10,7 @@ import { getProgram, setActiveProgram, deleteProgram } from "@/lib/firestore";
 import type { Program, Session } from "@/types";
 import { SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import CardioIntervals from "@/components/CardioIntervals";
 
 const DAYS_SHORT = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
@@ -350,6 +351,13 @@ export default function ProgramDetailPage() {
                                                 ? `${Math.floor(session.restBetweenRoundsSeconds / 60)}m${session.restBetweenRoundsSeconds % 60 ? (session.restBetweenRoundsSeconds % 60) + "s" : ""}`
                                                 : `${session.restBetweenRoundsSeconds}s`} recupero</span>
                                             )}
+                                          </div>
+                                        )}
+
+                                        {/* Cardio intervals */}
+                                        {session.intervals && session.intervals.length > 0 && (
+                                          <div className="border-t border-slate-700/40 pt-3">
+                                            <CardioIntervals intervals={session.intervals} />
                                           </div>
                                         )}
 

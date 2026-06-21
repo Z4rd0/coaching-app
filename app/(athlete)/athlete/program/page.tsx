@@ -7,6 +7,7 @@ import { getAthletePrograms, getGroupsForAthlete, getGroupPrograms } from "@/lib
 import type { AthleteProgram } from "@/types";
 import { SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import CardioIntervals from "@/components/CardioIntervals";
 
 /** Personal program, or a shared group program tagged with its group name and id */
 type DisplayProgram = AthleteProgram & { groupName?: string; groupId?: string };
@@ -180,7 +181,12 @@ export default function AthleteProgramPage() {
                                         )}
                                       </div>
                                       <p className="text-xs text-slate-500 mt-0.5">
-                                        {session.exercises.length} esercizi · {session.durationMin} min · RPE {session.targetRPE}
+                                        {session.intervals?.length
+                                          ? `${session.intervals.length} blocchi · `
+                                          : session.exercises.length
+                                          ? `${session.exercises.length} esercizi · `
+                                          : ""}
+                                        {session.durationMin} min · RPE {session.targetRPE}
                                       </p>
                                     </div>
                                     <svg
@@ -200,6 +206,9 @@ export default function AthleteProgramPage() {
 
                                 {isOpen && (
                                   <div className="px-4 pb-4 pt-1 space-y-2 border-t border-slate-700/50 bg-slate-900/30">
+                                    {session.intervals && session.intervals.length > 0 && (
+                                      <CardioIntervals intervals={session.intervals} />
+                                    )}
                                     {session.exercises.map((ex, ei) => (
                                       <div key={ei} className="bg-slate-800 rounded-xl px-3 py-2.5">
                                         <p className="text-white text-sm font-medium">{ex.name || `Esercizio ${ei + 1}`}</p>

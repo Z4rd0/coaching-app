@@ -86,6 +86,33 @@ export interface HiitBlock {
 
 export type HiitFormat = "interval" | "tabata" | "emom" | "amrap" | "for_time";
 
+// ─── Cardio intervals (running / cycling / swim repeats) ───────────────────────
+
+/** One effort or recovery segment — distance- or time-based, with optional
+ *  target pace / heart rate. */
+export interface CardioIntervalStep {
+  distanceM?: number;    // e.g. 1000 for 1 km
+  durationSec?: number;  // e.g. 180 for 3'
+  targetPace?: string;   // e.g. "4:00/km", "1:45/100m"
+  targetHR?: string;     // e.g. "Z4" or "165-170"
+}
+
+/** A repeated work/recovery pair, e.g. 5× (1000m @ 4:00/km, rec 2' jog). */
+export interface CardioInterval {
+  reps: number;                 // how many times the work/recovery pair repeats
+  work: CardioIntervalStep;
+  recovery?: CardioIntervalStep & { kind?: "jog" | "walk" | "stand" };
+  label?: string;               // e.g. "Riscaldamento", "Serie principale"
+  notes?: string;
+}
+
+export type CardioFormat =
+  | "continuous"   // steady run (no intervals)
+  | "intervals"    // structured repeats
+  | "fartlek"
+  | "tempo"
+  | "progression";
+
 export interface HiitLog {
   roundsCompleted: number;
   totalTimeSeconds?: number;
@@ -112,6 +139,9 @@ export interface Session {
   hiitFormat?: HiitFormat;
   hiitBlocks?: HiitBlock[];
   hiitTotalSeconds?: number;
+  // Cardio-specific (running/cycling/swim) — structured interval prescription
+  cardioFormat?: CardioFormat;
+  intervals?: CardioInterval[];
 }
 
 export interface Week {
