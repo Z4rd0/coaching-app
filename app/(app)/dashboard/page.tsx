@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
-import { getActiveProgram, getLogs, getTodaySession, getUpcomingSessions, getAthletesAdherence } from "@/lib/firestore";
+import { getActiveProgram, getLogs, getTodaySession, getUpcomingSessions, getAthletesAdherence, updateProgram } from "@/lib/firestore";
 import type { AthleteAdherence } from "@/lib/firestore";
 import type { Program, Session, WorkoutLog } from "@/types";
 import { SESSION_TYPE_LABELS, MOOD_LABELS } from "@/types";
@@ -66,6 +66,30 @@ export default function DashboardPage() {
     document.cookie = "coach-auth=; path=/; max-age=0";
     await signOut();
     router.replace("/auth");
+  };
+
+  // Move a single session to another calendar day by setting its scheduledDate
+  // (getTodaySession honors scheduledDate over dayOfWeek). Persists to the
+  // active library program; optimistic update with revert on failure.
+  const handleMoveSession = async (target: Session, newISODate: string) => {
+    if (!user || !program || !newISODate) return;
+    const newCycles = program.cycles.map((cycle) => ({
+      ...cycle,
+      weeks: cycle.weeks.map((week) => ({
+        ...week,
+        sessions: week.sessions.map((s) =>
+          s === target ? { ...s, scheduledDate: newISODate } : s
+        ),
+      })),
+    }));
+    const previous = program;
+    setProgram({ ...program, cycles: newCycles });
+    try {
+      await updateProgram(user.uid, program.id, { cycles: newCycles });
+    } catch (err) {
+      console.error("updateProgram (move session) error:", err);
+      setProgram(previous);
+    }
   };
 
   if (loading) return <LoadingSpinner className="min-h-screen" />;
@@ -335,7 +359,12 @@ export default function DashboardPage() {
               <h2 className="section-label mb-3">Prossimi giorni</h2>
               <div className="space-y-2">
                 {upcoming.map(({ date, session }) => (
-                  <UpcomingRow key={date.toISOString()} date={date} session={session} />
+                  <UpcomingRow
+                    key={date.toISOString()}
+                    date={date}
+                    session={session}
+                    onMove={(newISODate) => handleMoveSession(session, newISODate)}
+                  />
                 ))}
               </div>
             </section>
@@ -397,10 +426,26 @@ function daysSince(d: Date | null): number {
   return Math.floor((Date.now() - d.getTime()) / (24 * 60 * 60 * 1000));
 }
 
-function UpcomingRow({ date, session }: { date: Date; session: Session }) {
+function toISODate(d: Date): string {
+  return [
+    d.getFullYear(),
+    String(d.getMonth() + 1).padStart(2, "0"),
+    String(d.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+function UpcomingRow({
+  date,
+  session,
+  onMove,
+}: {
+  date: Date;
+  session: Session;
+  onMove: (newISODate: string) => void;
+}) {
   const [open, setOpen] = useState(false);
   const tc = SESSION_TYPE_COLORS[session.type] ?? SESSION_TYPE_COLORS.strength;
-  const hasDetail = session.exercises.length > 0 || !!session.notes;
+  const iso = toISODate(date);
   const meta = [
     session.durationMin > 0 ? `⏱ ${session.durationMin} min` : null,
     session.exercises.length > 0 ? `💪 ${session.exercises.length} esercizi` : null,
@@ -409,7 +454,7 @@ function UpcomingRow({ date, session }: { date: Date; session: Session }) {
   return (
     <div className="card-2 overflow-hidden">
       <button
-        onClick={() => hasDetail && setOpen((v) => !v)}
+        onClick={() => setOpen((v) => !v)}
         className="w-full flex items-center gap-3 px-4 py-3 text-left transition-opacity active:opacity-80"
       >
         <div className="flex flex-col items-center justify-center shrink-0 w-10">
@@ -436,32 +481,62 @@ function UpcomingRow({ date, session }: { date: Date; session: Session }) {
             </p>
           )}
         </div>
-        {hasDetail && (
-          <svg
-            width="14" height="14"
-            className={`shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
-            fill="none" viewBox="0 0 24 24" stroke="var(--text-faintest)" strokeWidth={2}
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-          </svg>
-        )}
+        <svg
+          width="14" height="14"
+          className={`shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+          fill="none" viewBox="0 0 24 24" stroke="var(--text-faintest)" strokeWidth={2}
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
       </button>
 
       {open && (
-        <div className="px-4 py-3 space-y-2" style={{ borderTop: "1px solid var(--border-default)" }}>
-          {session.exercises.map((ex, i) => (
-            <div key={i} className="flex items-baseline gap-2 text-[13px]">
-              <span className="shrink-0 w-5 text-right" style={{ color: "var(--text-faintest)" }}>{i + 1}.</span>
-              <span className="font-medium" style={{ color: "var(--text-secondary)" }}>{ex.name}</span>
-              {ex.reps && <span style={{ color: "var(--text-faint)" }}>{ex.sets}×{ex.reps}</span>}
-              {ex.load && <span style={{ color: "var(--text-faint)" }}>@ {ex.load}</span>}
+        <div className="px-4 pb-3 pt-1 space-y-3" style={{ borderTop: "1px solid var(--border-default)" }}>
+          {(session.exercises.length > 0 || session.notes) && (
+            <div className="space-y-2 pt-2">
+              {session.exercises.map((ex, i) => (
+                <div key={i} className="flex items-baseline gap-2 text-[13px]">
+                  <span className="shrink-0 w-5 text-right" style={{ color: "var(--text-faintest)" }}>{i + 1}.</span>
+                  <span className="font-medium" style={{ color: "var(--text-secondary)" }}>{ex.name}</span>
+                  {ex.reps && <span style={{ color: "var(--text-faint)" }}>{ex.sets}×{ex.reps}</span>}
+                  {ex.load && <span style={{ color: "var(--text-faint)" }}>@ {ex.load}</span>}
+                </div>
+              ))}
+              {session.notes && (
+                <p className="text-[12px] italic" style={{ color: "var(--text-faint)" }}>
+                  {session.notes}
+                </p>
+              )}
             </div>
-          ))}
-          {session.notes && (
-            <p className="text-[12px] italic mt-1 pt-2" style={{ borderTop: session.exercises.length > 0 ? "1px solid var(--border-default)" : "none", color: "var(--text-faint)" }}>
-              {session.notes}
-            </p>
           )}
+
+          {/* Actions: log this session (on any day) / move it to another day */}
+          <div className="flex items-center gap-2">
+            {session.type !== "rest" && (
+              <Link
+                href={`/log?session=${iso}`}
+                className="flex-1 text-center text-white font-semibold py-2 rounded-lg text-[13px] transition-opacity active:opacity-80"
+                style={{ background: tc.color }}
+              >
+                Registra
+              </Link>
+            )}
+            <label className="relative flex-1 cursor-pointer">
+              <span
+                className="block text-center font-semibold py-2 rounded-lg text-[13px]"
+                style={{ background: "var(--bg-surface-3)", color: "var(--text-secondary)" }}
+              >
+                Sposta giorno
+              </span>
+              <input
+                type="date"
+                defaultValue={iso}
+                onChange={(e) => e.target.value && onMove(e.target.value)}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                aria-label="Sposta a un altro giorno"
+              />
+            </label>
+          </div>
         </div>
       )}
     </div>

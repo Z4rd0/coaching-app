@@ -63,6 +63,10 @@ export default function LogPage() {
   const [logDate, setLogDate] = useState<string>(
     searchParams.get("date") ?? new Date().toISOString().slice(0, 10)
   );
+  // When set (ISO "YYYY-MM-DD"), locks which planned session we're logging,
+  // decoupled from the actual log date — lets you log an upcoming session on a
+  // different day. Without it, the session follows the chosen date (default flow).
+  const plannedDate = searchParams.get("session");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -99,7 +103,9 @@ export default function LogPage() {
     getActiveProgram(user.uid).then((prog) => {
       setProgram(prog);
       if (prog) {
-        const s = getTodaySession(prog, new Date(logDate + "T12:00:00"));
+        // A planned session (from "Prossimi giorni") wins; otherwise the
+        // session is the one falling on the chosen log date.
+        const s = getTodaySession(prog, new Date((plannedDate ?? logDate) + "T12:00:00"));
         setTodaySession(s);
         if (s && s.exercises.length > 0) setExerciseLogs(initExerciseLogs(s));
         if (s) setDurationMin(s.durationMin);
@@ -110,7 +116,9 @@ export default function LogPage() {
   }, [user]);
 
   useEffect(() => {
-    if (!program) return;
+    // When logging a specific planned session, the session is locked — changing
+    // the actual log date must not swap it out.
+    if (!program || plannedDate) return;
     const s = getTodaySession(program, new Date(logDate + "T12:00:00"));
     setTodaySession(s);
     if (s && s.exercises.length > 0) setExerciseLogs(initExerciseLogs(s));
@@ -234,6 +242,11 @@ export default function LogPage() {
             onChange={(e) => setLogDate(e.target.value)}
             className={inputCls}
           />
+          {plannedDate && (
+            <p className="text-[11px] mt-2" style={{ color: "var(--text-faint)" }}>
+              📋 Stai registrando una sessione programmata. Imposta qui il giorno in cui l&apos;hai effettivamente svolta (default: oggi).
+            </p>
+          )}
         </div>
 
         {/* ── Free session type toggle ── */}
