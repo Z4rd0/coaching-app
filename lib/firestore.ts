@@ -678,3 +678,28 @@ export function getTodaySession(program: Program | AthleteProgram, forDate?: Dat
   }
   return null;
 }
+
+export interface UpcomingSession {
+  date: Date;
+  session: Session;
+}
+
+/** Sessions scheduled over the next `days` days starting at `from` (default today),
+ *  using the same calendar placement as getTodaySession (scheduledDate → startDate
+ *  → recurring day-of-week). One entry per day that has a session. */
+export function getUpcomingSessions(
+  program: Program | AthleteProgram,
+  days = 14,
+  from?: Date
+): UpcomingSession[] {
+  const start = from ? new Date(from) : new Date();
+  start.setHours(0, 0, 0, 0);
+  const out: UpcomingSession[] = [];
+  for (let i = 0; i < days; i++) {
+    const d = new Date(start);
+    d.setDate(start.getDate() + i);
+    const session = getTodaySession(program, d);
+    if (session) out.push({ date: d, session });
+  }
+  return out;
+}

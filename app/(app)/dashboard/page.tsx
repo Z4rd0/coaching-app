@@ -5,9 +5,9 @@ import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
-import { getActiveProgram, getLogs, getTodaySession, getAthletesAdherence } from "@/lib/firestore";
-import type { AthleteAdherence } from "@/lib/firestore";
-import type { Program, WorkoutLog } from "@/types";
+import { getActiveProgram, getLogs, getTodaySession, getUpcomingSessions, getAthletesAdherence } from "@/lib/firestore";
+import type { AthleteAdherence, UpcomingSession } from "@/lib/firestore";
+import type { Program, Session, WorkoutLog } from "@/types";
 import { SESSION_TYPE_LABELS, MOOD_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import Avatar from "@/components/Avatar";
@@ -18,6 +18,9 @@ const SESSION_TYPE_COLORS: Record<string, { color: string; bg: string }> = {
   hiit:     { color: "#FB7185", bg: "rgba(244,63,94,0.12)" },
   cardio:   { color: "#FBBF24", bg: "rgba(245,158,11,0.12)" },
   circuit:  { color: "#FACC15", bg: "rgba(250,204,21,0.12)" },
+  mobility: { color: "#34D399", bg: "rgba(52,211,153,0.12)" },
+  rest:     { color: "#94A3B8", bg: "rgba(148,163,184,0.12)" },
+  other:    { color: "#A78BFA", bg: "rgba(167,139,250,0.12)" },
 };
 
 type View = "coach" | "personal";
@@ -46,6 +49,11 @@ export default function DashboardPage() {
   }, [user]);
 
   const todaySession = program ? getTodaySession(program) : null;
+  // Next sessions starting tomorrow (today is already shown above). 14-day horizon
+  // covers the rest of the current week plus the start of the next.
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const upcoming = program ? getUpcomingSessions(program, 14, tomorrow) : [];
 
   const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const weekLogs = recentLogs.filter((l) => l.date.toMillis() > oneWeekAgo);
@@ -195,6 +203,30 @@ export default function DashboardPage() {
       {/* ── PERSONAL VIEW ── */}
       {view === "personal" && (
         <>
+          {program && (
+            <Link
+              href={`/programs/${program.id}`}
+              className="card-2 flex items-center gap-3 px-4 py-3 active:opacity-80 transition-opacity"
+            >
+              <div className="w-9 h-9 rounded-full flex items-center justify-center shrink-0" style={{ background: "rgba(29,158,117,0.14)" }}>
+                <svg width="18" height="18" fill="none" viewBox="0 0 24 24" stroke="var(--green-primary)" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+                </svg>
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10px] font-semibold uppercase tracking-wide" style={{ color: "var(--text-faint)" }}>
+                  Programma attivo
+                </p>
+                <p className="text-[14px] font-semibold truncate" style={{ color: "var(--text-primary)" }}>
+                  {program.name}
+                </p>
+              </div>
+              <svg width="16" height="16" fill="none" viewBox="0 0 24 24" stroke="var(--text-faintest)" strokeWidth={2} className="shrink-0">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+              </svg>
+            </Link>
+          )}
+
           <section>
             <h2 className="section-label mb-3">Sessione di oggi</h2>
 
@@ -298,6 +330,17 @@ export default function DashboardPage() {
             )}
           </section>
 
+          {upcoming.length > 0 && (
+            <section>
+              <h2 className="section-label mb-3">Prossimi giorni</h2>
+              <div className="space-y-2">
+                {upcoming.map(({ date, session }) => (
+                  <UpcomingRow key={date.toISOString()} date={date} session={session} />
+                ))}
+              </div>
+            </section>
+          )}
+
           <section>
             <h2 className="section-label mb-3">Questa settimana</h2>
             <div className="grid grid-cols-2 gap-2.5">
@@ -352,6 +395,77 @@ export default function DashboardPage() {
 function daysSince(d: Date | null): number {
   if (!d) return Infinity;
   return Math.floor((Date.now() - d.getTime()) / (24 * 60 * 60 * 1000));
+}
+
+function UpcomingRow({ date, session }: { date: Date; session: Session }) {
+  const [open, setOpen] = useState(false);
+  const tc = SESSION_TYPE_COLORS[session.type] ?? SESSION_TYPE_COLORS.strength;
+  const hasDetail = session.exercises.length > 0 || !!session.notes;
+  const meta = [
+    session.durationMin > 0 ? `⏱ ${session.durationMin} min` : null,
+    session.exercises.length > 0 ? `💪 ${session.exercises.length} esercizi` : null,
+  ].filter(Boolean).join(" · ");
+
+  return (
+    <div className="card-2 overflow-hidden">
+      <button
+        onClick={() => hasDetail && setOpen((v) => !v)}
+        className="w-full flex items-center gap-3 px-4 py-3 text-left transition-opacity active:opacity-80"
+      >
+        <div className="flex flex-col items-center justify-center shrink-0 w-10">
+          <span className="text-[10px] font-semibold uppercase" style={{ color: "var(--text-faint)" }}>
+            {format(date, "EEE", { locale: it })}
+          </span>
+          <span className="text-[19px] font-black tabular leading-none mt-0.5" style={{ color: "var(--text-primary)" }}>
+            {format(date, "d")}
+          </span>
+        </div>
+        <div className="flex-1 min-w-0">
+          <span
+            className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
+            style={{ background: tc.bg, color: tc.color }}
+          >
+            {SESSION_TYPE_LABELS[session.type]}
+          </span>
+          <p className="text-[14px] font-medium truncate mt-1" style={{ color: "var(--text-primary)" }}>
+            {session.title}
+          </p>
+          {meta && (
+            <p className="text-[11px] mt-0.5" style={{ color: "var(--text-faint)" }}>
+              {meta}
+            </p>
+          )}
+        </div>
+        {hasDetail && (
+          <svg
+            width="14" height="14"
+            className={`shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+            fill="none" viewBox="0 0 24 24" stroke="var(--text-faintest)" strokeWidth={2}
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        )}
+      </button>
+
+      {open && (
+        <div className="px-4 py-3 space-y-2" style={{ borderTop: "1px solid var(--border-default)" }}>
+          {session.exercises.map((ex, i) => (
+            <div key={i} className="flex items-baseline gap-2 text-[13px]">
+              <span className="shrink-0 w-5 text-right" style={{ color: "var(--text-faintest)" }}>{i + 1}.</span>
+              <span className="font-medium" style={{ color: "var(--text-secondary)" }}>{ex.name}</span>
+              {ex.reps && <span style={{ color: "var(--text-faint)" }}>{ex.sets}×{ex.reps}</span>}
+              {ex.load && <span style={{ color: "var(--text-faint)" }}>@ {ex.load}</span>}
+            </div>
+          ))}
+          {session.notes && (
+            <p className="text-[12px] italic mt-1 pt-2" style={{ borderTop: session.exercises.length > 0 ? "1px solid var(--border-default)" : "none", color: "var(--text-faint)" }}>
+              {session.notes}
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function StatCard({ label, value, valueColor }: { label: string; value: string; valueColor?: string }) {
