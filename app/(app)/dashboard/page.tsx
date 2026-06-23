@@ -49,11 +49,13 @@ export default function DashboardPage() {
   }, [user]);
 
   const todaySession = program ? getTodaySession(program) : null;
-  // Next sessions starting tomorrow (today is already shown above). 14-day horizon
-  // covers the rest of the current week plus the start of the next.
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  const upcoming = program ? getUpcomingSessions(program, 14, tomorrow) : [];
+  // Upcoming sessions over a 14-day horizon, starting today. We drop only the
+  // single session already shown in the hero card above (by reference), so any
+  // EXTRA session moved onto today still appears here (and stays re-movable).
+  const today0 = new Date();
+  today0.setHours(0, 0, 0, 0);
+  const upcoming = (program ? getUpcomingSessions(program, 14, today0) : [])
+    .filter((u) => u.session !== todaySession);
 
   const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const weekLogs = recentLogs.filter((l) => l.date.toMillis() > oneWeekAgo);
@@ -358,9 +360,9 @@ export default function DashboardPage() {
             <section>
               <h2 className="section-label mb-3">Prossimi giorni</h2>
               <div className="space-y-2">
-                {upcoming.map(({ date, session }) => (
+                {upcoming.map(({ date, session }, i) => (
                   <UpcomingRow
-                    key={date.toISOString()}
+                    key={`${toISODate(date)}-${i}`}
                     date={date}
                     session={session}
                     onMove={(newISODate) => handleMoveSession(session, newISODate)}

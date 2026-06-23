@@ -624,59 +624,69 @@ export async function getAthletesAdherence(coachId: string): Promise<AthleteAdhe
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-export function getTodaySession(program: Program | AthleteProgram, forDate?: Date): Session | null {
-  const today = forDate ? new Date(forDate) : new Date();
-  today.setHours(0, 0, 0, 0);
+/** ALL sessions that fall on `date` (there can be more than one — e.g. after
+ *  rescheduling two sessions onto the same day). Placement: explicit
+ *  scheduledDate first, then startDate-based calendar placement, then (only for
+ *  undated programs) recurring day-of-week. */
+export function getSessionsForDate(program: Program | AthleteProgram, date: Date): Session[] {
+  const day = new Date(date);
+  day.setHours(0, 0, 0, 0);
   // Use local date components — toISOString() gives UTC date which is off by 1 day in UTC+ zones
-  const todayISO = [
-    today.getFullYear(),
-    String(today.getMonth() + 1).padStart(2, "0"),
-    String(today.getDate()).padStart(2, "0"),
+  const dayISO = [
+    day.getFullYear(),
+    String(day.getMonth() + 1).padStart(2, "0"),
+    String(day.getDate()).padStart(2, "0"),
   ].join("-");
 
-  // Pass 1: any session with an explicit scheduledDate matching today wins
+  // Pass 1: sessions explicitly pinned to this date via scheduledDate.
+  const pinned: Session[] = [];
   for (const cycle of program.cycles) {
     for (const week of cycle.weeks) {
       for (const session of week.sessions) {
-        if (session.scheduledDate === todayISO) return session;
+        if (session.scheduledDate === dayISO) pinned.push(session);
       }
     }
   }
 
-  // Pass 2: startDate-based calendar placement (startDate should be the Monday of week 1).
-  // When a program is anchored to a calendar (startDate set), the date placement is
-  // authoritative: if nothing lands on today (rest day, or the program has ended), we
-  // return null rather than surfacing a stale session from another week. The day-of-week
-  // fallback below would otherwise show "un allenamento molto vecchio".
+  // Pass 2: startDate-based calendar placement (startDate = Monday of week 1).
+  // When the program is anchored to a calendar, date placement is authoritative:
+  // if nothing native lands here we surface only the pinned ones (no day-of-week
+  // fallback, which would show a stale session from another week).
   if (program.startDate) {
     const start = new Date(program.startDate + "T00:00:00");
     let totalWeeks = 0;
+    const dated: Session[] = [];
     for (const cycle of program.cycles) {
       for (const week of cycle.weeks) {
         for (const session of week.sessions) {
           if (session.scheduledDate) continue;
           const d = new Date(start);
           d.setDate(start.getDate() + totalWeeks * 7 + session.dayOfWeek);
-          if (d.getTime() === today.getTime()) return session;
+          if (d.getTime() === day.getTime()) dated.push(session);
         }
         totalWeeks++;
       }
     }
-    return null;
+    return [...pinned, ...dated];
   }
 
-  // Pass 3: day-of-week fallback for undated programs (recurring weekly templates with
-  // no startDate). Mon=0 … Sun=6.
-  const dow = (today.getDay() + 6) % 7;
+  // Pass 3: day-of-week fallback for undated programs (recurring weekly
+  // templates with no startDate). Mon=0 … Sun=6.
+  const dow = (day.getDay() + 6) % 7;
+  const recurring: Session[] = [];
   for (const cycle of program.cycles) {
     for (const week of cycle.weeks) {
       for (const session of week.sessions) {
         if (session.scheduledDate) continue;
-        if (session.dayOfWeek === dow) return session;
+        if (session.dayOfWeek === dow) recurring.push(session);
       }
     }
   }
-  return null;
+  return [...pinned, ...recurring];
+}
+
+export function getTodaySession(program: Program | AthleteProgram, forDate?: Date): Session | null {
+  return getSessionsForDate(program, forDate ?? new Date())[0] ?? null;
 }
 
 export interface UpcomingSession {
@@ -684,9 +694,9 @@ export interface UpcomingSession {
   session: Session;
 }
 
-/** Sessions scheduled over the next `days` days starting at `from` (default today),
- *  using the same calendar placement as getTodaySession (scheduledDate → startDate
- *  → recurring day-of-week). One entry per day that has a session. */
+/** Every session scheduled over the next `days` days starting at `from`
+ *  (default today). Multiple sessions on the same day are all included, so two
+ *  workouts moved onto the same date both remain visible (and re-movable). */
 export function getUpcomingSessions(
   program: Program | AthleteProgram,
   days = 14,
@@ -698,8 +708,9 @@ export function getUpcomingSessions(
   for (let i = 0; i < days; i++) {
     const d = new Date(start);
     d.setDate(start.getDate() + i);
-    const session = getTodaySession(program, d);
-    if (session) out.push({ date: d, session });
+    for (const session of getSessionsForDate(program, d)) {
+      out.push({ date: new Date(d), session });
+    }
   }
   return out;
 }
