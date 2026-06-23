@@ -6,7 +6,7 @@ import { format } from "date-fns";
 import { it } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
 import { getActiveProgram, getLogs, getTodaySession, getUpcomingSessions, getAthletesAdherence } from "@/lib/firestore";
-import type { AthleteAdherence, UpcomingSession } from "@/lib/firestore";
+import type { AthleteAdherence } from "@/lib/firestore";
 import type { Program, Session, WorkoutLog } from "@/types";
 import { SESSION_TYPE_LABELS, MOOD_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
