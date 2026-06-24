@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { format } from "date-fns";
 import { it } from "date-fns/locale";
@@ -48,14 +48,23 @@ export default function DashboardPage() {
     }).finally(() => setLoading(false));
   }, [user]);
 
-  const todaySession = program ? getTodaySession(program) : null;
+  const todaySession = useMemo(
+    () => (program ? getTodaySession(program) : null),
+    [program]
+  );
   // Upcoming sessions over a 14-day horizon, starting today. We drop only the
   // single session already shown in the hero card above (by reference), so any
   // EXTRA session moved onto today still appears here (and stays re-movable).
-  const today0 = new Date();
-  today0.setHours(0, 0, 0, 0);
-  const upcoming = (program ? getUpcomingSessions(program, 14, today0) : [])
-    .filter((u) => u.session !== todaySession);
+  // Memoized on `program` so the triple-nested cycle walk doesn't re-run on
+  // every render (e.g. expand/collapse or view toggle).
+  const upcoming = useMemo(() => {
+    if (!program) return [];
+    const today0 = new Date();
+    today0.setHours(0, 0, 0, 0);
+    return getUpcomingSessions(program, 14, today0).filter(
+      (u) => u.session !== todaySession
+    );
+  }, [program, todaySession]);
 
   const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const weekLogs = recentLogs.filter((l) => l.date.toMillis() > oneWeekAgo);

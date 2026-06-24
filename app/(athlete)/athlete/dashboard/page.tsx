@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { format } from "date-fns";
@@ -77,10 +77,19 @@ export default function AthleteDashboardPage() {
     }).finally(() => setLoading(false));
   }, [user, athleteAccess]);
 
-  const todaySession = program ? getTodaySession(program) : null;
-  const todayGroupSessions = groupPrograms
-    .map((p) => ({ groupName: p.groupName, programName: p.name, session: getTodaySession(p) }))
-    .filter((g) => g.session !== null);
+  // Memoized so the triple-nested cycle walk in getTodaySession doesn't re-run
+  // on every render (view toggle, strava status changes, etc.).
+  const todaySession = useMemo(
+    () => (program ? getTodaySession(program) : null),
+    [program]
+  );
+  const todayGroupSessions = useMemo(
+    () =>
+      groupPrograms
+        .map((p) => ({ groupName: p.groupName, programName: p.name, session: getTodaySession(p) }))
+        .filter((g) => g.session !== null),
+    [groupPrograms]
+  );
 
   const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const weekLogs = recentLogs.filter((l) => l.date.toMillis() > oneWeekAgo);
