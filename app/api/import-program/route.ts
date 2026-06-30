@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
 import { verifyRequestAuth } from "@/lib/server-auth";
+import { programImportSchema, formatZodError } from "@/lib/schemas/program";
 
 const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
 
@@ -83,21 +84,24 @@ function parseAndReturn(message: Anthropic.Message) {
     );
   }
 
-  let parsed: { name?: string; cycles?: unknown[] };
+  let parsed: unknown;
   try {
     parsed = JSON.parse(jsonMatch[0]);
   } catch {
     return NextResponse.json({ error: "JSON non parsabile", raw: jsonMatch[0].slice(0, 500) }, { status: 422 });
   }
 
-  if (!parsed.name || !Array.isArray(parsed.cycles)) {
+  // Validate the LLM output at the boundary before handing it to the client
+  // (AUDIT ALTO-2 / §9 anticipated Zod). Coerces common type drifts.
+  const result = programImportSchema.safeParse(parsed);
+  if (!result.success) {
     return NextResponse.json(
-      { error: "Struttura programma non valida", raw: responseText.slice(0, 500) },
+      { error: `Struttura programma non valida: ${formatZodError(result.error)}`, raw: responseText.slice(0, 500) },
       { status: 422 }
     );
   }
 
-  return NextResponse.json({ success: true, program: parsed });
+  return NextResponse.json({ success: true, program: result.data });
 }
 
 const EXTRACTION_PROMPT = `
