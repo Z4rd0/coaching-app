@@ -21,6 +21,7 @@ import type {
   HiitBlock,
   HiitFormat,
   SegmentBase,
+  Cycle,
 } from "@/types";
 
 type ConditioningStructure = ConditioningSegment["structure"];
@@ -151,4 +152,37 @@ export function normalizeSession(session: Session): Segment[] {
       // Unknown/malformed type — never throw in a read path.
       return [note(base)];
   }
+}
+
+// ─── Write side (dual-write — MIGRATION_SEGMENTS.md §5.1) ──────────────────────
+
+/**
+ * Single, atomic projection applied at write time: persist the composable
+ * `segments` ALONGSIDE the legacy fields, in one object, so the document always
+ * carries both representations and un-upgraded clients keep reading the legacy
+ * shape. While authoring is still legacy-first, `segments` is derived from the
+ * legacy fields via normalizeSession(). (The reverse projection segments→legacy
+ * lands with the segment-native builder.) Pure: no I/O, no mutation.
+ */
+export function serializeSessionForWrite(session: Session): Session {
+  return { ...session, segments: normalizeSession(session) };
+}
+
+/**
+ * Apply serializeSessionForWrite to every session in a program-shaped payload
+ * (full or partial), in one pass, so the whole document is written with both
+ * representations atomically. No-op when the payload carries no cycles.
+ */
+export function serializeProgramForWrite<T extends { cycles?: Cycle[] }>(data: T): T {
+  if (!data.cycles) return data;
+  return {
+    ...data,
+    cycles: data.cycles.map((cycle) => ({
+      ...cycle,
+      weeks: cycle.weeks.map((week) => ({
+        ...week,
+        sessions: week.sessions.map(serializeSessionForWrite),
+      })),
+    })),
+  };
 }

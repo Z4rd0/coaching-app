@@ -1,5 +1,9 @@
 import { describe, it, expect } from "vitest";
-import { normalizeSession } from "@/lib/segments";
+import {
+  normalizeSession,
+  serializeSessionForWrite,
+  serializeProgramForWrite,
+} from "@/lib/segments";
 import type {
   Session,
   Segment,
@@ -7,6 +11,7 @@ import type {
   EnduranceSegment,
   ConditioningSegment,
   Exercise,
+  Program,
 } from "@/types";
 
 function session(partial: Partial<Session> & { type: Session["type"] }): Session {
@@ -177,5 +182,62 @@ describe("normalizeSession — purity", () => {
     const b = normalizeSession(s);
     expect(a).toEqual(b); // deterministic
     expect(s).toEqual(snapshot); // input untouched (no rest leaked onto source exercises)
+  });
+});
+
+describe("serializeSessionForWrite — dual-write", () => {
+  it("persists derived segments alongside the legacy fields", () => {
+    const s = session({ type: "strength", exercises: [ex("Squat")] });
+    const out = serializeSessionForWrite(s);
+    expect(out.exercises).toEqual(s.exercises); // legacy preserved
+    expect(out.segments).toHaveLength(1);
+    expect(out.segments?.[0].kind).toBe("strength");
+  });
+
+  it("keeps authored segments instead of re-deriving them", () => {
+    const seg: Segment = { id: "auth-1", kind: "note", title: "x" };
+    const s = session({ type: "strength", segments: [seg] });
+    expect(serializeSessionForWrite(s).segments).toEqual([seg]);
+  });
+
+  it("is idempotent and does not mutate its input", () => {
+    const s = session({ type: "cardio", cardioFormat: "tempo" });
+    const snapshot = JSON.parse(JSON.stringify(s));
+    const once = serializeSessionForWrite(s);
+    const twice = serializeSessionForWrite(once);
+    expect(twice).toEqual(once);
+    expect(s).toEqual(snapshot);
+  });
+});
+
+describe("serializeProgramForWrite", () => {
+  const program = (over: Partial<Program> = {}): Program =>
+    ({
+      id: "p1",
+      name: "P",
+      sport: "X",
+      cycles: [
+        { cycleNumber: 1, weeks: [
+          { weekNumber: 1, sessions: [
+            session({ type: "strength", exercises: [ex("Squat")] }),
+            session({ type: "rest" }),
+          ] },
+        ] },
+      ],
+      ...over,
+    }) as Program;
+
+  it("serializes every session and preserves program-level fields", () => {
+    const out = serializeProgramForWrite(program({ startDate: "2026-01-05" }));
+    expect(out.name).toBe("P");
+    expect(out.startDate).toBe("2026-01-05");
+    const sessions = out.cycles[0].weeks[0].sessions;
+    expect(sessions.every((s) => (s.segments?.length ?? 0) > 0)).toBe(true);
+    expect(sessions[1].segments?.[0].kind).toBe("rest");
+  });
+
+  it("is a no-op when the partial payload carries no cycles", () => {
+    const partial: Partial<Program> = { name: "Renamed" };
+    expect(serializeProgramForWrite(partial)).toEqual(partial);
   });
 });
