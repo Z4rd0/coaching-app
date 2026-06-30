@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase-admin";
 import { verifyRequestAuth } from "@/lib/server-auth";
 import { refreshStravaToken, fetchStravaLaps, speedToPace } from "@/lib/strava";
+import { getStravaTokens, updateStravaTokens } from "@/lib/strava-tokens";
 import type { Lap } from "@/types";
 
 export async function GET(req: NextRequest) {
@@ -15,12 +15,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ error: "activityId mancante" }, { status: 400 });
   }
 
-  const doc = await getAdminDb().collection("athleteAccess").doc(caller.uid).get();
-  const data = doc.data() as Record<string, unknown> | undefined;
-  const strava = data?.strava as
-    | { accessToken: string; refreshToken: string; expiresAt: number }
-    | undefined;
-
+  const strava = await getStravaTokens(caller.uid);
   if (!strava) {
     return NextResponse.json({ error: "Strava non connesso" }, { status: 404 });
   }
@@ -33,14 +28,7 @@ export async function GET(req: NextRequest) {
       accessToken = refreshed.accessToken;
       refreshToken = refreshed.refreshToken;
       expiresAt = refreshed.expiresAt;
-      await getAdminDb()
-        .collection("athleteAccess")
-        .doc(caller.uid)
-        .update({
-          "strava.accessToken": accessToken,
-          "strava.refreshToken": refreshToken,
-          "strava.expiresAt": expiresAt,
-        });
+      await updateStravaTokens(caller.uid, { accessToken, refreshToken, expiresAt });
     } catch {
       return NextResponse.json({ error: "Impossibile rinnovare il token Strava" }, { status: 502 });
     }
