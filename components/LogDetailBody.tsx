@@ -2,6 +2,8 @@
 
 import type { WorkoutLog } from "@/types";
 import { MOOD_LABELS, ENERGY_LABELS } from "@/types";
+import SegmentView from "@/components/SegmentView";
+import { normalizeSession } from "@/lib/segments";
 
 const ZONE_COLOR = ["bg-blue-500", "bg-green-500", "bg-yellow-400", "bg-orange-400", "bg-red-500"];
 const ZONE_LABEL = ["Z1 Recupero", "Z2 Aerobica", "Z3 Soglia", "Z4 Anaerobica", "Z5 Massimale"];
@@ -41,6 +43,15 @@ export default function LogDetailBody({
           <p className="text-xs text-primary font-medium mb-1">💬 Dal tuo coach</p>
           <p className="text-sm text-slate-200">{log.coachComment}</p>
         </div>
+      )}
+
+      {/* Hybrid plan (composable blocks) — shown for hybrid sessions whose
+          per-block actuals aren't captured yet; gives the workout context. */}
+      {log.plannedSession?.segments && log.plannedSession.segments.length > 0 && (
+        <section className="space-y-2">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Programma (blocchi)</p>
+          <SegmentView segments={normalizeSession(log.plannedSession)} />
+        </section>
       )}
 
       {/* Exercise logs */}

@@ -9,6 +9,8 @@ import type { Program, Session, WorkoutLog, ExerciseLog, CardioLog, CircuitLog, 
 import { MOOD_LABELS, ENERGY_LABELS, SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import HiitTimer from "@/components/HiitTimer";
+import SegmentView from "@/components/SegmentView";
+import { normalizeSession } from "@/lib/segments";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -248,6 +250,15 @@ export default function LogPage() {
             </p>
           )}
         </div>
+
+        {/* Hybrid: show the composable plan as reference (core metrics logged below) */}
+        {sessionType === "hybrid" && todaySession && (
+          <div className="card p-4 space-y-2">
+            <p className={labelCls}>Programma (blocchi)</p>
+            <SegmentView segments={normalizeSession(todaySession)} />
+            <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>Registra durata, RPE e note qui sotto.</p>
+          </div>
+        )}
 
         {/* ── Free session type toggle ── */}
         {!todaySession && (
