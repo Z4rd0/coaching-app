@@ -156,15 +156,125 @@ export function normalizeSession(session: Session): Segment[] {
 
 // ─── Write side (dual-write — MIGRATION_SEGMENTS.md §5.1) ──────────────────────
 
+/** The legacy session fields the reverse projection can populate. */
+type LegacySessionFields = Partial<
+  Pick<
+    Session,
+    | "type"
+    | "exercises"
+    | "cardioFormat"
+    | "intervals"
+    | "targetRounds"
+    | "restBetweenRoundsSeconds"
+    | "hiitFormat"
+    | "hiitBlocks"
+    | "hiitTotalSeconds"
+  >
+>;
+
+/** Best-effort projection of a conditioning movement back to a legacy Exercise —
+ *  distance/duration/calories are folded into `reps` so old clients still see them. */
+function movementToExercise(m: MovementItem): Exercise {
+  const reps =
+    m.reps ??
+    (m.distanceM != null
+      ? `${m.distanceM} m`
+      : m.durationSec != null
+        ? `${m.durationSec} s`
+        : m.calories != null
+          ? `${m.calories} cal`
+          : "");
+  return {
+    name: m.name,
+    sets: 1,
+    reps,
+    load: m.load ?? "",
+    notes: "",
+    ...(m.restSeconds != null ? { restSeconds: m.restSeconds } : {}),
+  };
+}
+
+/** Flatten groups to a legacy exercise list — old clients lose the A1/A2 grouping. */
+function groupsToExercises(groups: ExerciseGroup[]): Exercise[] {
+  return groups.flatMap((g) => g.items);
+}
+
+/**
+ * Reverse projection (segments → legacy fields), used when authoring is
+ * segment-native so un-upgraded clients still get a usable legacy shape. Faithful
+ * for single-segment sessions; for a true hybrid (heterogeneous segments) legacy
+ * can't be exact, so it falls back to type "other" with the movements flattened —
+ * new clients read `segments` (authoritative). Pure.
+ */
+export function denormalizeSegments(segments: Segment[]): LegacySessionFields {
+  if (segments.length === 1) {
+    const seg = segments[0];
+    switch (seg.kind) {
+      case "strength":
+        return { type: "strength", exercises: groupsToExercises(seg.groups) };
+      case "endurance":
+        return { type: "cardio", cardioFormat: seg.format, intervals: seg.steps };
+      case "conditioning":
+        if (seg.structure === "rounds") {
+          return {
+            type: "circuit",
+            ...(seg.rounds != null ? { targetRounds: seg.rounds } : {}),
+            exercises: seg.movements.map(movementToExercise),
+          };
+        }
+        return {
+          type: "hiit",
+          hiitFormat: seg.structure, // amrap|emom|for_time|tabata|interval ⊂ HiitFormat
+          ...(seg.timeCapSec != null ? { hiitTotalSeconds: seg.timeCapSec } : {}),
+          hiitBlocks: [
+            {
+              rounds: seg.rounds ?? 1,
+              intervals: seg.movements.map((m) => ({
+                label: m.name,
+                durationSeconds: m.durationSec ?? m.restSeconds ?? 0,
+                isRest: m.restSeconds != null && m.durationSec == null,
+              })),
+            },
+          ],
+        };
+      case "rest":
+        return { type: "rest" };
+      case "note":
+        return { type: "other" };
+    }
+  }
+  // Heterogeneous (true hybrid) — best-effort fallback for old clients.
+  const exercises = segments.flatMap((seg) =>
+    seg.kind === "strength"
+      ? groupsToExercises(seg.groups)
+      : seg.kind === "conditioning"
+        ? seg.movements.map(movementToExercise)
+        : []
+  );
+  return { type: "other", exercises };
+}
+
 /**
  * Single, atomic projection applied at write time: persist the composable
  * `segments` ALONGSIDE the legacy fields, in one object, so the document always
  * carries both representations and un-upgraded clients keep reading the legacy
- * shape. While authoring is still legacy-first, `segments` is derived from the
- * legacy fields via normalizeSession(). (The reverse projection segments→legacy
- * lands with the segment-native builder.) Pure: no I/O, no mutation.
+ * shape.
+ *
+ * `sourceOfTruth` declares which side the caller authored:
+ *  - "legacy" (default): legacy-first writers (current builder, MCP, import,
+ *    copy) — `segments` is derived from the legacy fields via normalizeSession().
+ *  - "segments": segment-native writers (the new builder) — the legacy fields are
+ *    derived from `segments` via denormalizeSegments().
+ *
+ * Pure: no I/O, no mutation.
  */
-export function serializeSessionForWrite(session: Session): Session {
+export function serializeSessionForWrite(
+  session: Session,
+  sourceOfTruth: "legacy" | "segments" = "legacy"
+): Session {
+  if (sourceOfTruth === "segments" && session.segments?.length) {
+    return { ...session, ...denormalizeSegments(session.segments), segments: session.segments };
+  }
   return { ...session, segments: normalizeSession(session) };
 }
 
@@ -173,7 +283,10 @@ export function serializeSessionForWrite(session: Session): Session {
  * (full or partial), in one pass, so the whole document is written with both
  * representations atomically. No-op when the payload carries no cycles.
  */
-export function serializeProgramForWrite<T extends { cycles?: Cycle[] }>(data: T): T {
+export function serializeProgramForWrite<T extends { cycles?: Cycle[] }>(
+  data: T,
+  sourceOfTruth: "legacy" | "segments" = "legacy"
+): T {
   if (!data.cycles) return data;
   return {
     ...data,
@@ -181,7 +294,7 @@ export function serializeProgramForWrite<T extends { cycles?: Cycle[] }>(data: T
       ...cycle,
       weeks: cycle.weeks.map((week) => ({
         ...week,
-        sessions: week.sessions.map(serializeSessionForWrite),
+        sessions: week.sessions.map((s) => serializeSessionForWrite(s, sourceOfTruth)),
       })),
     })),
   };

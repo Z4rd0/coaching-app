@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   normalizeSession,
+  denormalizeSegments,
   serializeSessionForWrite,
   serializeProgramForWrite,
 } from "@/lib/segments";
@@ -207,6 +208,83 @@ describe("serializeSessionForWrite — dual-write", () => {
     const twice = serializeSessionForWrite(once);
     expect(twice).toEqual(once);
     expect(s).toEqual(snapshot);
+  });
+});
+
+describe("denormalizeSegments — reverse projection (segments → legacy)", () => {
+  it("single strength → type strength + flattened exercises", () => {
+    const out = denormalizeSegments([
+      { id: "s", kind: "strength", groups: [{ items: [ex("Squat")] }, { items: [ex("Bench")] }] },
+    ]);
+    expect(out.type).toBe("strength");
+    expect(out.exercises?.map((e) => e.name)).toEqual(["Squat", "Bench"]);
+  });
+
+  it("single endurance → type cardio + format + intervals", () => {
+    const out = denormalizeSegments([
+      { id: "s", kind: "endurance", format: "intervals", steps: [{ reps: 5, work: { distanceM: 400 } }] },
+    ]);
+    expect(out.type).toBe("cardio");
+    expect(out.cardioFormat).toBe("intervals");
+    expect(out.intervals).toHaveLength(1);
+  });
+
+  it("single conditioning rounds → circuit; amrap → hiit", () => {
+    const circuit = denormalizeSegments([
+      { id: "s", kind: "conditioning", structure: "rounds", rounds: 3,
+        movements: [{ name: "Row", distanceM: 500 }] },
+    ]);
+    expect(circuit.type).toBe("circuit");
+    expect(circuit.targetRounds).toBe(3);
+    expect(circuit.exercises?.[0].reps).toBe("500 m"); // distance folded into reps
+
+    const hiit = denormalizeSegments([
+      { id: "s", kind: "conditioning", structure: "amrap", timeCapSec: 1200, rounds: 5,
+        movements: [{ name: "Work", durationSec: 40 }, { name: "Rest", restSeconds: 20 }] },
+    ]);
+    expect(hiit.type).toBe("hiit");
+    expect(hiit.hiitFormat).toBe("amrap");
+    expect(hiit.hiitTotalSeconds).toBe(1200);
+    expect(hiit.hiitBlocks?.[0].rounds).toBe(5);
+    expect(hiit.hiitBlocks?.[0].intervals[1]).toEqual({ label: "Rest", durationSeconds: 20, isRest: true });
+  });
+
+  it("rest → rest; note → other", () => {
+    expect(denormalizeSegments([{ id: "s", kind: "rest" }]).type).toBe("rest");
+    expect(denormalizeSegments([{ id: "s", kind: "note" }]).type).toBe("other");
+  });
+
+  it("heterogeneous (true hybrid) → other with flattened movements", () => {
+    const out = denormalizeSegments([
+      { id: "a", kind: "endurance", format: "continuous", steps: [] },
+      { id: "b", kind: "conditioning", structure: "amrap", movements: [{ name: "Burpee", reps: "10" }] },
+      { id: "c", kind: "strength", groups: [{ items: [ex("Squat")] }] },
+    ]);
+    expect(out.type).toBe("other");
+    expect(out.exercises?.map((e) => e.name)).toEqual(["Burpee", "Squat"]);
+  });
+
+  it("roundtrips a legacy strength session (normalize → denormalize preserves exercises)", () => {
+    const s = session({ type: "strength", exercises: [ex("Squat"), ex("Bench")] });
+    const back = denormalizeSegments(normalizeSession(s));
+    expect(back.type).toBe("strength");
+    expect(back.exercises).toEqual(s.exercises);
+  });
+});
+
+describe("serializeSessionForWrite — segments as source of truth", () => {
+  it("derives the legacy fields from authored segments", () => {
+    const s = session({
+      type: "strength", // stale legacy label
+      exercises: [ex("Stale")],
+      segments: [{ id: "s", kind: "conditioning", structure: "rounds", rounds: 4,
+        movements: [{ name: "Thruster", reps: "10", load: "40kg" }] }],
+    });
+    const out = serializeSessionForWrite(s, "segments");
+    expect(out.segments).toBe(s.segments); // segments kept authoritative
+    expect(out.type).toBe("circuit"); // legacy rederived from segments
+    expect(out.targetRounds).toBe(4);
+    expect(out.exercises?.[0].name).toBe("Thruster");
   });
 });
 
