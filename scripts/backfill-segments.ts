@@ -58,21 +58,30 @@ async function backfillCollection(ref: FirebaseFirestore.CollectionReference, la
   }
 }
 
-const coaches = await db.collection("coaches").get();
-for (const coach of coaches.docs) {
-  const c = coach.ref;
-  await backfillCollection(c.collection("programs"), `coaches/${coach.id}/programs`);
+// Wrapped in an async IIFE: tsx transpiles this .ts to CJS, which doesn't allow
+// top-level await.
+async function main() {
+  const coaches = await db.collection("coaches").get();
+  for (const coach of coaches.docs) {
+    const c = coach.ref;
+    await backfillCollection(c.collection("programs"), `coaches/${coach.id}/programs`);
 
-  const athletes = await c.collection("athletes").get();
-  for (const a of athletes.docs) {
-    await backfillCollection(a.ref.collection("programs"), `athletes/${a.id}/programs`);
+    const athletes = await c.collection("athletes").get();
+    for (const a of athletes.docs) {
+      await backfillCollection(a.ref.collection("programs"), `athletes/${a.id}/programs`);
+    }
+
+    const groups = await c.collection("groups").get();
+    for (const g of groups.docs) {
+      await backfillCollection(g.ref.collection("programs"), `groups/${g.id}/programs`);
+    }
   }
 
-  const groups = await c.collection("groups").get();
-  for (const g of groups.docs) {
-    await backfillCollection(g.ref.collection("programs"), `groups/${g.id}/programs`);
-  }
+  console.log(`\n${dryRun ? "[dry-run] " : ""}Done. ${updated} program(s) ${dryRun ? "would be " : ""}backfilled, ${skipped} skipped.`);
+  process.exit(0);
 }
 
-console.log(`\n${dryRun ? "[dry-run] " : ""}Done. ${updated} program(s) ${dryRun ? "would be " : ""}backfilled, ${skipped} skipped.`);
-process.exit(0);
+main().catch((err) => {
+  console.error(err);
+  process.exit(1);
+});
