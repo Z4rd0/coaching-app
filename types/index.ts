@@ -215,7 +215,7 @@ export interface Session {
   /** Optional ISO date "YYYY-MM-DD" — when set, overrides dayOfWeek
    *  for scheduling. Lets the coach pin a session to a precise calendar day. */
   scheduledDate?: string;
-  type: "strength" | "cardio" | "mobility" | "rest" | "other" | "circuit" | "hiit";
+  type: "strength" | "cardio" | "mobility" | "rest" | "other" | "circuit" | "hiit" | "hybrid";
   title: string;
   exercises: Exercise[];
   targetRPE: number; // 1-10
@@ -431,6 +431,7 @@ export const SESSION_TYPE_LABELS: Record<SessionType, string> = {
   other: "Altro",
   circuit: "Circuit",
   hiit: "HIIT",
+  hybrid: "Ibrido",
 };
 
 export const MOOD_LABELS: Record<number, string> = {

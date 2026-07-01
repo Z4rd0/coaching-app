@@ -195,10 +195,14 @@ describe("serializeSessionForWrite — dual-write", () => {
     expect(out.segments?.[0].kind).toBe("strength");
   });
 
-  it("keeps authored segments instead of re-deriving them", () => {
-    const seg: Segment = { id: "auth-1", kind: "note", title: "x" };
-    const s = session({ type: "strength", segments: [seg] });
-    expect(serializeSessionForWrite(s).segments).toEqual([seg]);
+  it("re-derives fresh segments for a legacy session (stale copy never wins)", () => {
+    // A legacy session carrying a stale dual-write copy: on write the segments
+    // must be re-derived from the (authoritative) legacy fields, not kept.
+    const stale: Segment = { id: "old", kind: "note", title: "stale" };
+    const s = session({ type: "strength", exercises: [ex("Squat")], segments: [stale] });
+    const out = serializeSessionForWrite(s);
+    expect(out.segments).toHaveLength(1);
+    expect(out.segments?.[0].kind).toBe("strength");
   });
 
   it("is idempotent and does not mutate its input", () => {
@@ -272,18 +276,18 @@ describe("denormalizeSegments — reverse projection (segments → legacy)", () 
   });
 });
 
-describe("serializeSessionForWrite — segments as source of truth", () => {
-  it("derives the legacy fields from authored segments", () => {
+describe("serializeSessionForWrite — hybrid (segments authoritative)", () => {
+  it("derives the legacy fields from authored segments, keeps type hybrid", () => {
     const s = session({
-      type: "strength", // stale legacy label
+      type: "hybrid",
       exercises: [ex("Stale")],
       segments: [{ id: "s", kind: "conditioning", structure: "rounds", rounds: 4,
         movements: [{ name: "Thruster", reps: "10", load: "40kg" }] }],
     });
-    const out = serializeSessionForWrite(s, "segments");
+    const out = serializeSessionForWrite(s);
     expect(out.segments).toBe(s.segments); // segments kept authoritative
-    expect(out.type).toBe("circuit"); // legacy rederived from segments
-    expect(out.targetRounds).toBe(4);
+    expect(out.type).toBe("hybrid"); // discriminator preserved
+    expect(out.targetRounds).toBe(4); // legacy derived from segments
     expect(out.exercises?.[0].name).toBe("Thruster");
   });
 });

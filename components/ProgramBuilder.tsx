@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { Cycle, Week, Session, Exercise, SessionType, HiitBlock, HiitInterval, HiitFormat } from "@/types";
 import { SESSION_TYPE_LABELS } from "@/types";
 import ExerciseForm from "./ExerciseForm";
+import SegmentEditor from "./SegmentEditor";
 import { emptyExercise, emptySession, emptyWeek, emptyCycle } from "@/lib/programHelpers";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -268,7 +269,9 @@ export default function ProgramBuilder({ cycles, onChange }: Props) {
                                 ? `${session.targetRounds ?? "?"} round · ${session.exercises.length} esercizi · ${session.durationMin} min`
                                 : session.type === "hiit"
                                   ? `${(session.hiitBlocks ?? []).reduce((s, b) => s + b.rounds, 0)} round · ${(session.hiitBlocks ?? []).length} blocco/i · ${session.durationMin} min`
-                                  : `${session.exercises.length} esercizi · ${session.durationMin} min · RPE ${session.targetRPE}`}
+                                  : session.type === "hybrid"
+                                    ? `${(session.segments ?? []).length} blocchi · ${session.durationMin} min`
+                                    : `${session.exercises.length} esercizi · ${session.durationMin} min · RPE ${session.targetRPE}`}
                             </p>
                           </div>
 
@@ -368,7 +371,16 @@ export default function ProgramBuilder({ cycles, onChange }: Props) {
                               <Field label="Tipo">
                                 <select
                                   value={session.type}
-                                  onChange={(e) => updateSession(ci, wi, si, (s) => ({ ...s, type: e.target.value as SessionType }))}
+                                  onChange={(e) => {
+                                    const t = e.target.value as SessionType;
+                                    // Entering "hybrid" opens the segment editor; leaving it drops
+                                    // any segments so the legacy fields re-derive fresh on save.
+                                    updateSession(ci, wi, si, (s) => ({
+                                      ...s,
+                                      type: t,
+                                      segments: t === "hybrid" ? (s.segments ?? []) : undefined,
+                                    }));
+                                  }}
                                   className={selectCls}
                                 >
                                   {(Object.entries(SESSION_TYPE_LABELS) as [SessionType, string][]).map(([k, v]) => (
@@ -558,8 +570,16 @@ export default function ProgramBuilder({ cycles, onChange }: Props) {
                               </div>
                             )}
 
-                            {/* Exercises (hidden for HIIT) */}
-                            {session.type !== "hiit" && (
+                            {/* Hybrid: segment-native editor (composable blocks) */}
+                            {session.type === "hybrid" && (
+                              <SegmentEditor
+                                segments={session.segments ?? []}
+                                onChange={(segs) => updateSession(ci, wi, si, (s) => ({ ...s, segments: segs }))}
+                              />
+                            )}
+
+                            {/* Exercises (hidden for HIIT and hybrid) */}
+                            {session.type !== "hiit" && session.type !== "hybrid" && (
                             <div className="space-y-2">
                               <div className="flex items-center justify-between">
                                 <span className="text-xs text-slate-400 font-medium uppercase tracking-wide">Esercizi</span>

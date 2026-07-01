@@ -79,7 +79,16 @@ function strength(base: SegmentBase, exercises?: Exercise[]): StrengthSegment {
 export function normalizeSession(session: Session): Segment[] {
   // Authored segments win — never re-derive when they exist.
   if (session.segments && session.segments.length > 0) return session.segments;
+  return synthesizeSegments(session);
+}
 
+/**
+ * Synthesize segments from the legacy fields ONLY, ignoring any existing
+ * session.segments. Used on the write path so a legacy-authored session
+ * re-derives fresh — a stale dual-write copy must never win over edited legacy
+ * fields. normalizeSession() prefers authored segments; this never does.
+ */
+function synthesizeSegments(session: Session): Segment[] {
   const base: SegmentBase = {
     id: SEG_ID,
     kind: "note", // overwritten by each constructor below
@@ -260,22 +269,28 @@ export function denormalizeSegments(segments: Segment[]): LegacySessionFields {
  * carries both representations and un-upgraded clients keep reading the legacy
  * shape.
  *
- * `sourceOfTruth` declares which side the caller authored:
- *  - "legacy" (default): legacy-first writers (current builder, MCP, import,
- *    copy) — `segments` is derived from the legacy fields via normalizeSession().
- *  - "segments": segment-native writers (the new builder) — the legacy fields are
- *    derived from `segments` via denormalizeSegments().
+ * The source of truth is derived from the session itself (no caller flag):
+ *  - type "hybrid" with segments → segment-authored: the legacy fields are
+ *    derived from the authored segments via denormalizeSegments() (type stays
+ *    "hybrid" as the discriminator).
+ *  - anything else → legacy-authored: segments are re-derived FRESH from the
+ *    legacy fields (via synthesizeSegments), so a stale dual-write copy can't
+ *    win over just-edited legacy fields.
  *
  * Pure: no I/O, no mutation.
  */
-export function serializeSessionForWrite(
-  session: Session,
-  sourceOfTruth: "legacy" | "segments" = "legacy"
-): Session {
-  if (sourceOfTruth === "segments" && session.segments?.length) {
-    return { ...session, ...denormalizeSegments(session.segments), segments: session.segments };
+export function serializeSessionForWrite(session: Session): Session {
+  if (session.type === "hybrid" && session.segments?.length) {
+    return {
+      ...session,
+      ...denormalizeSegments(session.segments),
+      type: "hybrid",
+      segments: session.segments,
+    };
   }
-  return { ...session, segments: normalizeSession(session) };
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  const { segments: _stale, ...legacy } = session;
+  return { ...legacy, segments: synthesizeSegments(session) } as Session;
 }
 
 /**
@@ -283,10 +298,7 @@ export function serializeSessionForWrite(
  * (full or partial), in one pass, so the whole document is written with both
  * representations atomically. No-op when the payload carries no cycles.
  */
-export function serializeProgramForWrite<T extends { cycles?: Cycle[] }>(
-  data: T,
-  sourceOfTruth: "legacy" | "segments" = "legacy"
-): T {
+export function serializeProgramForWrite<T extends { cycles?: Cycle[] }>(data: T): T {
   if (!data.cycles) return data;
   return {
     ...data,
@@ -294,7 +306,7 @@ export function serializeProgramForWrite<T extends { cycles?: Cycle[] }>(
       ...cycle,
       weeks: cycle.weeks.map((week) => ({
         ...week,
-        sessions: week.sessions.map((s) => serializeSessionForWrite(s, sourceOfTruth)),
+        sessions: week.sessions.map(serializeSessionForWrite),
       })),
     })),
   };
