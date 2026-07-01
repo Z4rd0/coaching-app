@@ -12,6 +12,8 @@ import { getActiveProgram, getLogs } from "@/lib/firestore";
 import type { Program, WorkoutLog, Session } from "@/types";
 import { SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import SegmentView from "@/components/SegmentView";
+import { normalizeSession } from "@/lib/segments";
 import Link from "next/link";
 
 const WEEK_DAYS = ["L", "M", "M", "G", "V", "S", "D"];
@@ -195,8 +197,11 @@ function SessionSheet({
             </div>
           )}
 
-          {/* Exercises */}
-          {session.exercises.length > 0 && (
+          {/* Body: hybrid sessions render via the composable model (always through
+              normalizeSession); single-paradigm keep the legacy exercise list. */}
+          {normalizeSession(session).length > 1 ? (
+            <SegmentView segments={normalizeSession(session)} />
+          ) : session.exercises.length > 0 ? (
             <div className="space-y-2">
               <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Esercizi</p>
               {session.exercises.map((ex, i) => (
@@ -233,7 +238,7 @@ function SessionSheet({
                 </div>
               ))}
             </div>
-          )}
+          ) : null}
 
           {/* Session notes */}
           {session.notes && (

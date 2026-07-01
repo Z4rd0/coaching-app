@@ -8,6 +8,8 @@ import type { AthleteProgram } from "@/types";
 import { SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import CardioIntervals from "@/components/CardioIntervals";
+import SegmentView from "@/components/SegmentView";
+import { normalizeSession } from "@/lib/segments";
 
 /** Personal program, or a shared group program tagged with its group name and id */
 type DisplayProgram = AthleteProgram & { groupName?: string; groupId?: string };
@@ -206,6 +208,12 @@ export default function AthleteProgramPage() {
 
                                 {isOpen && (
                                   <div className="px-4 pb-4 pt-1 space-y-2 border-t border-slate-700/50 bg-slate-900/30">
+                                    {/* Hybrid sessions render via the composable model (always
+                                        through normalizeSession); single-paradigm keep the legacy layout. */}
+                                    {normalizeSession(session).length > 1 ? (
+                                      <SegmentView segments={normalizeSession(session)} />
+                                    ) : (
+                                    <>
                                     {session.intervals && session.intervals.length > 0 && (
                                       <CardioIntervals intervals={session.intervals} />
                                     )}
@@ -225,6 +233,8 @@ export default function AthleteProgramPage() {
                                         )}
                                       </div>
                                     ))}
+                                    </>
+                                    )}
                                     {session.notes && (
                                       <p className="text-xs text-slate-400 italic px-1">{session.notes}</p>
                                     )}

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getAdminDb } from "@/lib/firebase-admin";
 import { verifyStravaState, exchangeStravaCode } from "@/lib/strava";
+import { saveStravaTokens } from "@/lib/strava-tokens";
 
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url);
@@ -20,17 +20,12 @@ export async function GET(req: NextRequest) {
 
   try {
     const tokens = await exchangeStravaCode(code);
-    await getAdminDb()
-      .collection("athleteAccess")
-      .doc(uid)
-      .update({
-        strava: {
-          accessToken: tokens.accessToken,
-          refreshToken: tokens.refreshToken,
-          expiresAt: tokens.expiresAt,
-          athleteId: tokens.athleteId,
-        },
-      });
+    await saveStravaTokens(uid, {
+      accessToken: tokens.accessToken,
+      refreshToken: tokens.refreshToken,
+      expiresAt: tokens.expiresAt,
+      athleteId: tokens.athleteId,
+    });
     return NextResponse.redirect(`${appUrl}/athlete/dashboard?strava=connected`);
   } catch {
     return NextResponse.redirect(`${appUrl}/athlete/dashboard?strava=error`);

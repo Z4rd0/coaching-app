@@ -11,6 +11,8 @@ import type { Program, Session } from "@/types";
 import { SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import CardioIntervals from "@/components/CardioIntervals";
+import SegmentView from "@/components/SegmentView";
+import { normalizeSession } from "@/lib/segments";
 
 const DAYS_SHORT = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
@@ -22,6 +24,7 @@ const TYPE_COLOR: Record<Session["type"], string> = {
   other:    "bg-slate-600/40 text-slate-300",
   circuit:  "bg-yellow-400/20 text-yellow-300",
   hiit:     "bg-rose-500/20 text-rose-300",
+  hybrid:   "bg-emerald-500/20 text-emerald-300",
 };
 
 // ─── Date helper ─────────────────────────────────────────────────────────────
@@ -340,6 +343,12 @@ export default function ProgramDetailPage() {
                                     {/* Session detail — expanded */}
                                     {sessionOpen && (
                                       <div className="px-4 pb-4 space-y-3 bg-slate-800/30">
+                                        {/* Hybrid (heterogeneous) sessions render via the composable
+                                            model; single-paradigm sessions keep the legacy layout. */}
+                                        {normalizeSession(session).length > 1 ? (
+                                          <SegmentView segments={normalizeSession(session)} />
+                                        ) : (
+                                        <>
                                         {/* Circuit info */}
                                         {session.type === "circuit" && (
                                           <div className="flex gap-4 text-xs text-slate-400 border-t border-slate-700/40 pt-3">
@@ -388,6 +397,8 @@ export default function ProgramDetailPage() {
                                               </li>
                                             ))}
                                           </ul>
+                                        )}
+                                        </>
                                         )}
 
                                         {/* Session notes */}

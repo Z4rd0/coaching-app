@@ -16,6 +16,8 @@ import { MOOD_LABELS, ENERGY_LABELS, SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import HiitTimer from "@/components/HiitTimer";
 import CardioIntervals from "@/components/CardioIntervals";
+import SegmentView from "@/components/SegmentView";
+import { normalizeSession } from "@/lib/segments";
 
 const inputCls = "w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-primary";
 const labelCls = "block text-xs text-slate-400 mb-1";
@@ -400,6 +402,15 @@ function AthleteLogPageInner() {
             className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary"
           />
         </div>
+
+        {/* Hybrid: show the composable plan as reference (core metrics logged below) */}
+        {sessionType === "hybrid" && selectedSession && (
+          <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-2">
+            <p className={labelCls}>Programma (blocchi)</p>
+            <SegmentView segments={normalizeSession(selectedSession)} />
+            <p className="text-[11px] text-slate-500">Registra durata, RPE e note qui sotto.</p>
+          </div>
+        )}
 
         {!selectedSession && (
           <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">

@@ -6,6 +6,8 @@ import { format } from "date-fns";
 import { it } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
 import { getActiveProgram, getLogs, getTodaySession, getUpcomingSessions, getAthletesAdherence, updateProgram } from "@/lib/firestore";
+import SegmentView from "@/components/SegmentView";
+import { normalizeSession } from "@/lib/segments";
 import type { AthleteAdherence } from "@/lib/firestore";
 import type { Program, Session, WorkoutLog } from "@/types";
 import { SESSION_TYPE_LABELS, MOOD_LABELS } from "@/types";
@@ -305,8 +307,14 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                {sessionExpanded && todaySession.exercises.length > 0 && (
+                {sessionExpanded && (normalizeSession(todaySession).length > 1 || todaySession.exercises.length > 0) && (
                   <div className="px-4 py-3 space-y-2" style={{ borderTop: "1px solid var(--border-default)" }}>
+                    {/* Hybrid sessions render via the composable model (always through
+                        normalizeSession); single-paradigm keep the legacy list. */}
+                    {normalizeSession(todaySession).length > 1 ? (
+                      <SegmentView segments={normalizeSession(todaySession)} />
+                    ) : (
+                    <>
                     {todaySession.exercises.map((ex, i) => (
                       <div key={i} className="flex items-baseline gap-2 text-[13px]">
                         <span className="shrink-0 w-5 text-right" style={{ color: "var(--text-faintest)" }}>{i + 1}.</span>
@@ -322,6 +330,8 @@ export default function DashboardPage() {
                         )}
                       </div>
                     ))}
+                    </>
+                    )}
                     {todaySession.notes && (
                       <p className="text-[12px] italic mt-2 pt-2" style={{ borderTop: "1px solid var(--border-default)", color: "var(--text-faint)" }}>
                         {todaySession.notes}
@@ -503,16 +513,20 @@ function UpcomingRow({
 
       {open && (
         <div className="px-4 pb-3 pt-1 space-y-3" style={{ borderTop: "1px solid var(--border-default)" }}>
-          {(session.exercises.length > 0 || session.notes) && (
+          {(normalizeSession(session).length > 1 || session.exercises.length > 0 || session.notes) && (
             <div className="space-y-2 pt-2">
-              {session.exercises.map((ex, i) => (
+              {normalizeSession(session).length > 1 ? (
+                <SegmentView segments={normalizeSession(session)} />
+              ) : (
+              session.exercises.map((ex, i) => (
                 <div key={i} className="flex items-baseline gap-2 text-[13px]">
                   <span className="shrink-0 w-5 text-right" style={{ color: "var(--text-faintest)" }}>{i + 1}.</span>
                   <span className="font-medium" style={{ color: "var(--text-secondary)" }}>{ex.name}</span>
                   {ex.reps && <span style={{ color: "var(--text-faint)" }}>{ex.sets}×{ex.reps}</span>}
                   {ex.load && <span style={{ color: "var(--text-faint)" }}>@ {ex.load}</span>}
                 </div>
-              ))}
+              ))
+              )}
               {session.notes && (
                 <p className="text-[12px] italic" style={{ color: "var(--text-faint)" }}>
                   {session.notes}

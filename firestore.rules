@@ -97,6 +97,14 @@ service cloud.firestore {
       }
     }
 
+    // ── Strava OAuth tokens (server-only) ──────────────────────────────────────
+    // Access/refresh tokens never touch the client: the connect flow is handled
+    // server-side (Admin SDK, which bypasses rules). Stored in their OWN doc —
+    // NOT in athleteAccess — so the owning coach can't read an athlete's tokens.
+    match /athleteStravaTokens/{uid} {
+      allow read, write: if false;
+    }
+
     // ── AthleteAccess lookup ───────────────────────────────────────────────────
     match /athleteAccess/{uid} {
       // Owner can read their own access doc

@@ -18,6 +18,7 @@ import {
   getCountFromServer,
 } from "firebase/firestore";
 import { getFirebaseDb } from "./firebase";
+import { serializeProgramForWrite } from "./segments";
 import type {
   Coach,
   Athlete,
@@ -265,10 +266,10 @@ export async function createAthleteProgram(
   athleteId: string,
   data: Omit<AthleteProgram, "id" | "createdAt">
 ): Promise<DocumentReference> {
-  return addDoc(athleteProgramsRef(coachId, athleteId), stripUndefined({
+  return addDoc(athleteProgramsRef(coachId, athleteId), stripUndefined(serializeProgramForWrite({
     ...data,
     createdAt: Timestamp.now(),
-  }));
+  })));
 }
 
 export async function updateAthleteProgram(
@@ -277,7 +278,7 @@ export async function updateAthleteProgram(
   programId: string,
   data: Partial<Omit<AthleteProgram, "id" | "createdAt">>
 ): Promise<void> {
-  await updateDoc(athleteProgramRef(coachId, athleteId, programId), stripUndefined(data));
+  await updateDoc(athleteProgramRef(coachId, athleteId, programId), stripUndefined(serializeProgramForWrite(data)));
 }
 
 export async function deleteAthleteProgram(
@@ -423,10 +424,10 @@ export async function createGroupProgram(
   groupId: string,
   data: Omit<GroupProgram, "id" | "createdAt">
 ): Promise<DocumentReference> {
-  return addDoc(groupProgramsRef(coachId, groupId), stripUndefined({
+  return addDoc(groupProgramsRef(coachId, groupId), stripUndefined(serializeProgramForWrite({
     ...data,
     createdAt: Timestamp.now(),
-  }));
+  })));
 }
 
 export async function updateGroupProgram(
@@ -435,7 +436,7 @@ export async function updateGroupProgram(
   programId: string,
   data: Partial<Omit<GroupProgram, "id" | "createdAt">>
 ): Promise<void> {
-  await updateDoc(groupProgramRef(coachId, groupId, programId), stripUndefined(data));
+  await updateDoc(groupProgramRef(coachId, groupId, programId), stripUndefined(serializeProgramForWrite(data)));
 }
 
 export async function deleteGroupProgram(
@@ -518,7 +519,7 @@ export async function createProgram(
   coachId: string,
   data: Omit<Program, "id" | "createdAt">
 ): Promise<DocumentReference> {
-  return addDoc(programsRef(coachId), stripUndefined({ ...data, createdAt: Timestamp.now() }));
+  return addDoc(programsRef(coachId), stripUndefined(serializeProgramForWrite({ ...data, createdAt: Timestamp.now() })));
 }
 
 export async function updateProgram(
@@ -526,7 +527,7 @@ export async function updateProgram(
   programId: string,
   data: Partial<Omit<Program, "id" | "createdAt">>
 ): Promise<void> {
-  await updateDoc(programRef(coachId, programId), stripUndefined(data));
+  await updateDoc(programRef(coachId, programId), stripUndefined(serializeProgramForWrite(data)));
 }
 
 export async function deleteProgram(coachId: string, programId: string): Promise<void> {

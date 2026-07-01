@@ -121,12 +121,101 @@ export interface HiitLog {
   calories?: number;
 }
 
+// ─── Composable segments (workout model — see /MIGRATION_SEGMENTS.md) ──────────
+// A workout becomes an ordered sequence of heterogeneous segments so that
+// strength, endurance and hybrid (Hyrox/metcon) all fit one model. STEP 1 of the
+// migration: these are ADDITIVE — `Session.segments?` is optional and the legacy
+// fields stay authoritative until the redesign's later steps. Nothing reads these
+// yet; the read adapter `normalizeSession()` lands in step 2.
+
+/** What role a segment plays in the session — orthogonal to its `kind`
+ *  (a warmup can be strength, endurance or conditioning). */
+export type SegmentPurpose = "warmup" | "main" | "cooldown" | "mobility" | "accessory";
+
+export interface SegmentBase {
+  /** Stable id within the session — referenced by SegmentLog (planned↔actual). */
+  id: string;
+  kind: string;
+  title?: string;
+  notes?: string;
+  /** Defaults to "main" when absent. */
+  purpose?: SegmentPurpose;
+}
+
+/** A strength block: one exercise (singleton group) or a superset / giant set
+ *  (A1/A2…). The model is uniform — a normal exercise is a group of one item, so
+ *  there is no parallel flat `exercises[]`. */
+export interface ExerciseGroup {
+  /** Shared label = superset, e.g. "A" → A1/A2. Absent for standalone exercises. */
+  label?: string;
+  /** Rounds of the whole group (superset repeated N times). Falls back to the
+   *  items' own `sets` when absent. */
+  rounds?: number;
+  /** Rest after the complete group, in seconds (intra-group rest is per-item). */
+  restSecondsAfter?: number;
+  /** Exercises in execution order: items[0]=A1, items[1]=A2, … */
+  items: Exercise[];
+}
+
+export interface StrengthSegment extends SegmentBase {
+  kind: "strength";
+  groups: ExerciseGroup[];
+}
+
+export interface EnduranceSegment extends SegmentBase {
+  kind: "endurance";
+  format: CardioFormat;
+  steps: CardioInterval[];
+}
+
+/** One movement inside a conditioning block: strength-like (reps/load) OR
+ *  endurance-like (distance/duration/calories). One type, optional fields. */
+export interface MovementItem {
+  name: string;
+  reps?: string;       // "10", "AMRAP", "max"
+  load?: string;       // "20 kg", "70% 1RM", "bodyweight"
+  distanceM?: number;  // 1000 (run/row)
+  durationSec?: number;
+  calories?: number;   // erg by calories
+  targetPace?: string;
+  targetHR?: string;
+  restSeconds?: number;
+}
+
+/** The hybrid block that the legacy model can't express: a timed structure that
+ *  mixes strength and endurance movements (Hyrox / metcon / CrossFit-style). */
+export interface ConditioningSegment extends SegmentBase {
+  kind: "conditioning";
+  structure: "amrap" | "emom" | "for_time" | "rounds" | "tabata" | "interval";
+  timeCapSec?: number; // AMRAP / for-time
+  rounds?: number;     // rounds / EMOM
+  movements: MovementItem[];
+}
+
+export interface RestSegment extends SegmentBase {
+  kind: "rest";
+  durationSec?: number;
+}
+
+export interface NoteSegment extends SegmentBase {
+  kind: "note";
+}
+
+export type Segment =
+  | StrengthSegment
+  | EnduranceSegment
+  | ConditioningSegment
+  | RestSegment
+  | NoteSegment;
+
+export type SegmentKind = Segment["kind"];
+
 export interface Session {
   dayOfWeek: number; // 0 = Monday … 6 = Sunday
   /** Optional ISO date "YYYY-MM-DD" — when set, overrides dayOfWeek
    *  for scheduling. Lets the coach pin a session to a precise calendar day. */
   scheduledDate?: string;
-  type: "strength" | "cardio" | "mobility" | "rest" | "other" | "circuit" | "hiit";
+  type: "strength" | "cardio" | "mobility" | "rest" | "other" | "circuit" | "hiit" | "hybrid";
   title: string;
   exercises: Exercise[];
   targetRPE: number; // 1-10
@@ -142,6 +231,11 @@ export interface Session {
   // Cardio-specific (running/cycling/swim) — structured interval prescription
   cardioFormat?: CardioFormat;
   intervals?: CardioInterval[];
+  // ── Composable model (additive — see /MIGRATION_SEGMENTS.md) ──
+  /** New source of truth: ordered heterogeneous segments. Optional during the
+   *  migration; when absent, normalizeSession() synthesizes it from the legacy
+   *  fields above. Read it only via normalizeSession()/repository, never raw. */
+  segments?: Segment[];
 }
 
 export interface Week {
@@ -277,6 +371,20 @@ export interface Lap {
   avgCadence?: number;
 }
 
+/** Actuals for one performed segment, keyed back to the planned Segment.id.
+ *  Additive (see /MIGRATION_SEGMENTS.md §6): the legacy per-type log fields below
+ *  stay authoritative until the migration backfills `segmentLogs`. The actuals
+ *  reuse the existing legacy log shapes per kind; tightened with the segment
+ *  authoring/log UI in a later step. */
+export interface SegmentLog {
+  segmentId: string;
+  kind: SegmentKind;
+  exerciseLogs?: ExerciseLog[];   // kind: "strength"
+  cardioLog?: CardioLog;          // kind: "endurance"
+  conditioningLog?: CircuitLog;   // kind: "conditioning"
+  notes?: string;
+}
+
 export interface WorkoutLog {
   id: string;
   date: Timestamp;
@@ -298,6 +406,9 @@ export interface WorkoutLog {
   cardioLog?: CardioLog;
   circuitLog?: CircuitLog;
   hiitLog?: HiitLog;
+  /** New composable actuals (additive — see /MIGRATION_SEGMENTS.md §6). Optional
+   *  during the migration; aligned 1:1 with the planned session's segments. */
+  segmentLogs?: SegmentLog[];
   /** Lap/split data — populated when importing from Strava or Garmin */
   laps?: Lap[];
   /** Feedback written by the coach on this workout — shown to the athlete */
@@ -320,6 +431,7 @@ export const SESSION_TYPE_LABELS: Record<SessionType, string> = {
   other: "Altro",
   circuit: "Circuit",
   hiit: "HIIT",
+  hybrid: "Ibrido",
 };
 
 export const MOOD_LABELS: Record<number, string> = {
