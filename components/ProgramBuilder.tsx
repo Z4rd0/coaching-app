@@ -6,20 +6,11 @@ import { SESSION_TYPE_LABELS } from "@/types";
 import ExerciseForm from "./ExerciseForm";
 import SegmentEditor from "./SegmentEditor";
 import { emptyExercise, emptySession, emptyWeek, emptyCycle } from "@/lib/programHelpers";
+import { sessionMeta } from "@/lib/sessionMeta";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const DAYS = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
-
-const TYPE_COLOR: Record<string, string> = {
-  strength: "bg-blue-500",
-  cardio: "bg-orange-400",
-  mobility: "bg-purple-400",
-  rest: "bg-slate-500",
-  other: "bg-slate-400",
-  circuit: "bg-yellow-400",
-  hiit: "bg-rose-500",
-};
 
 const HIIT_FORMAT_LABELS: Record<HiitFormat, string> = {
   interval: "Interval",
@@ -243,7 +234,7 @@ export default function ProgramBuilder({ cycles, onChange }: Props) {
                           onClick={() => setOpenKey(isOpen ? null : k)}
                         >
                           {/* Type dot */}
-                          <div className={`w-2 h-2 rounded-full shrink-0 ${TYPE_COLOR[session.type] || "bg-slate-500"}`} />
+                          <div className={`w-2 h-2 rounded-full shrink-0 ${sessionMeta(session.type).dot}`} />
 
                           {/* Summary */}
                           <div className="flex-1 min-w-0">
