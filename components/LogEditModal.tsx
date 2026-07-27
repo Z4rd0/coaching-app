@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { WorkoutLog } from "@/types";
 import { MOOD_LABELS, ENERGY_LABELS } from "@/types";
+import { toLocalISODate, todayISO } from "@/lib/dates";
 
 /**
  * Snappy in-place editor for a workout log's metadata: date, duration,
@@ -28,7 +29,7 @@ export default function LogEditModal({
     notes: string;
   }) => Promise<void>;
 }) {
-  const initialDate = log.date.toDate().toISOString().slice(0, 10);
+  const initialDate = toLocalISODate(log.date.toDate());
 
   const [dateISO, setDateISO] = useState(initialDate);
   const [duration, setDuration] = useState(log.actualDurationMin);
@@ -72,7 +73,7 @@ export default function LogEditModal({
             <input
               type="date"
               value={dateISO}
-              max={new Date().toISOString().slice(0, 10)}
+              max={todayISO()}
               onChange={(e) => setDateISO(e.target.value)}
               className="w-full bg-slate-800 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary"
             />

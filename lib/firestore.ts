@@ -15,10 +15,10 @@ import {
   DocumentReference,
   arrayUnion,
   arrayRemove,
-  getCountFromServer,
 } from "firebase/firestore";
 import { getFirebaseDb } from "./firebase";
 import { serializeProgramForWrite } from "./segments";
+import { toLocalISODate, fromLocalISODate } from "./dates";
 import type {
   Coach,
   Athlete,
@@ -145,6 +145,17 @@ export async function createCoach(
     // this path (they have a doc → detected as coach → skip onboarding).
     { merge: true }
   );
+}
+
+/** Merge a patch into the coach's free-form `settings` map (alert thresholds,
+ *  future preferences). Dotted paths so one key never clobbers the others. */
+export async function updateCoachSettings(
+  coachId: string,
+  patch: Record<string, unknown>
+): Promise<void> {
+  const dotted: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(patch)) dotted[`settings.${k}`] = v;
+  await updateDoc(coachRef(coachId), stripUndefined(dotted));
 }
 
 // ─── Athletes (coach-managed profiles) ───────────────────────────────────────
@@ -289,19 +300,41 @@ export async function deleteAthleteProgram(
   await deleteDoc(athleteProgramRef(coachId, athleteId, programId));
 }
 
-/** Copy a coach library program and assign it to an athlete */
-export async function copyProgramToAthlete(
-  coachId: string,
-  athleteId: string,
-  sourceProgram: Program
-): Promise<DocumentReference> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { id, createdAt: _createdAt, ...rest } = sourceProgram;
-  return createAthleteProgram(coachId, athleteId, {
+/** The document body for a program copied from a library template.
+ *
+ *  Two fields are deliberately NOT inherited from the template:
+ *  - `isActive`: activation is a separate, explicit step (setActive*Program),
+ *    which is the only thing that may deactivate the other programs. Copying it
+ *    would leave two documents flagged active and make getActive*Program — a
+ *    `limit(1)` with no ordering — return an arbitrary one.
+ *  - `startDate`: the template's calendar anchor is meaningless for the target;
+ *    the caller supplies the real one.
+ *
+ *  Pure, so the "a copy is never born active" rule is unit-testable. */
+export function programCopyPayload(
+  sourceProgram: Program,
+  opts?: { startDate?: string }
+): Omit<AthleteProgram, "id" | "createdAt"> {
+  /* eslint-disable @typescript-eslint/no-unused-vars */
+  const { id, createdAt: _createdAt, isActive: _isActive, startDate: _startDate, ...rest } = sourceProgram;
+  /* eslint-enable @typescript-eslint/no-unused-vars */
+  return {
     ...rest,
     sourceTemplateId: id,
     status: "active",
-  });
+    isActive: false,
+    ...(opts?.startDate ? { startDate: opts.startDate } : {}),
+  } as Omit<AthleteProgram, "id" | "createdAt">;
+}
+
+/** Copy a coach library program and assign it to an athlete. */
+export async function copyProgramToAthlete(
+  coachId: string,
+  athleteId: string,
+  sourceProgram: Program,
+  opts?: { startDate?: string }
+): Promise<DocumentReference> {
+  return createAthleteProgram(coachId, athleteId, programCopyPayload(sourceProgram, opts));
 }
 
 export async function setActiveAthleteProgram(
@@ -447,19 +480,15 @@ export async function deleteGroupProgram(
   await deleteDoc(groupProgramRef(coachId, groupId, programId));
 }
 
-/** Copy a coach library program into a group (shared — not per-athlete) */
+/** Copy a coach library program into a group (shared — not per-athlete).
+ *  `isActive` and `startDate` are not inherited: see programCopyPayload. */
 export async function copyProgramToGroup(
   coachId: string,
   groupId: string,
-  sourceProgram: Program
+  sourceProgram: Program,
+  opts?: { startDate?: string }
 ): Promise<DocumentReference> {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const { id, createdAt: _createdAt, ...rest } = sourceProgram;
-  return createGroupProgram(coachId, groupId, {
-    ...rest,
-    sourceTemplateId: id,
-    status: "active",
-  });
+  return createGroupProgram(coachId, groupId, programCopyPayload(sourceProgram, opts));
 }
 
 export async function setActiveGroupProgram(
@@ -599,95 +628,182 @@ export async function updateLogComment(
 
 export interface AthleteAdherence {
   athlete: Athlete;
-  /** Logged sessions in the last 7 days (count aggregation — 1 read per athlete) */
+  /** Logged sessions in the last 7 days */
   weekSessions: number;
   lastLogDate: Date | null;
+  /** Logs from the last 28 days — the window the load maths needs. */
+  recentLogs: WorkoutLog[];
+  /** Sessions the athlete's active program planned over the last 7 days. */
+  plannedLast7: number;
 }
 
+/**
+ * Everything the coach dashboard needs to decide who needs attention.
+ *
+ * The 28-day log window replaces what used to be a bare count aggregation: the
+ * acute:chronic ratio needs the actual daily loads, and the "no news from this
+ * athlete" check needs their notes. That is 3 reads per athlete (logs, last log,
+ * active program) instead of 2 — deliberate, and the reason the whole thing is
+ * computed once at dashboard load rather than per card.
+ */
 export async function getAthletesAdherence(coachId: string): Promise<AthleteAdherence[]> {
   const athletes = (await getAthletes(coachId)).filter((a) => a.status === "active");
-  const weekAgo = Timestamp.fromDate(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+  const now = new Date();
+  const weekAgoMs = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+  const monthAgo = Timestamp.fromDate(new Date(now.getTime() - 28 * 24 * 60 * 60 * 1000));
+
   return Promise.all(
     athletes.map(async (athlete) => {
-      const [countSnap, lastSnap] = await Promise.all([
-        getCountFromServer(
-          query(logsRef(coachId, athlete.id), where("date", ">=", weekAgo))
+      const [recentSnap, lastSnap, program] = await Promise.all([
+        getDocs(
+          query(
+            logsRef(coachId, athlete.id),
+            where("date", ">=", monthAgo),
+            orderBy("date", "desc")
+          )
         ),
         getDocs(query(logsRef(coachId, athlete.id), orderBy("date", "desc"), limit(1))),
+        getActiveAthleteProgram(coachId, athlete.id).catch(() => null),
       ]);
+
+      const recentLogs = recentSnap.docs.map(
+        (d) => ({ id: d.id, ...d.data() } as WorkoutLog)
+      );
+      const weekSessions = recentLogs.filter((l) => l.date.toMillis() > weekAgoMs).length;
       const last = lastSnap.empty
         ? null
         : (lastSnap.docs[0].data().date as Timestamp).toDate();
-      return { athlete, weekSessions: countSnap.data().count, lastLogDate: last };
+
+      // How many sessions the plan called for over the last 7 days (today
+      // included), so adherence compares like with like.
+      let plannedLast7 = 0;
+      if (program) {
+        const day = new Date(now);
+        day.setHours(0, 0, 0, 0);
+        for (let i = 0; i < 7; i++) {
+          const d = new Date(day);
+          d.setDate(day.getDate() - i);
+          plannedLast7 += getSessionsForDate(program, d).filter(
+            (s) => s.type !== "rest"
+          ).length;
+        }
+      }
+
+      return { athlete, weekSessions, lastLogDate: last, recentLogs, plannedLast7 };
     })
   );
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
-/** ALL sessions that fall on `date` (there can be more than one — e.g. after
- *  rescheduling two sessions onto the same day). Placement: explicit
- *  scheduledDate first, then startDate-based calendar placement, then (only for
- *  undated programs) recurring day-of-week. */
-export function getSessionsForDate(program: Program | AthleteProgram, date: Date): Session[] {
+/** A session placed on a calendar day, carrying the coordinates it came from so
+ *  callers can label it ("Ciclo 2 · Settimana 3") without re-walking the tree. */
+export interface ScheduledSession {
+  session: Session;
+  cycleNumber: number;
+  weekNumber: number;
+}
+
+/** ALL sessions that fall on `date`, with their cycle/week coordinates (there
+ *  can be more than one — e.g. after rescheduling two sessions onto the same
+ *  day). Placement: explicit scheduledDate first, then startDate-based calendar
+ *  placement, then (only for undated programs) recurring day-of-week.
+ *
+ *  This is the single source of truth for "what is planned on day X": calendar,
+ *  dashboard and the log pages all go through it, so a session can never show up
+ *  on different days in different pages. */
+export function getScheduledSessionsForDate(
+  program: Program | AthleteProgram,
+  date: Date
+): ScheduledSession[] {
   const day = new Date(date);
   day.setHours(0, 0, 0, 0);
-  // Use local date components — toISOString() gives UTC date which is off by 1 day in UTC+ zones
-  const dayISO = [
-    day.getFullYear(),
-    String(day.getMonth() + 1).padStart(2, "0"),
-    String(day.getDate()).padStart(2, "0"),
-  ].join("-");
+  // Local components, never toISOString(): see lib/dates.ts.
+  const dayISO = toLocalISODate(day);
 
   // Pass 1: sessions explicitly pinned to this date via scheduledDate.
-  const pinned: Session[] = [];
+  const pinned: ScheduledSession[] = [];
   for (const cycle of program.cycles) {
     for (const week of cycle.weeks) {
       for (const session of week.sessions) {
-        if (session.scheduledDate === dayISO) pinned.push(session);
+        if (session.scheduledDate === dayISO) {
+          pinned.push({ session, cycleNumber: cycle.cycleNumber, weekNumber: week.weekNumber });
+        }
       }
     }
   }
 
   // Pass 2: startDate-based calendar placement (startDate = Monday of week 1).
-  // When the program is anchored to a calendar, date placement is authoritative:
-  // if nothing native lands here we surface only the pinned ones (no day-of-week
-  // fallback, which would show a stale session from another week).
-  if (program.startDate) {
-    const start = new Date(program.startDate + "T00:00:00");
-    let totalWeeks = 0;
-    const dated: Session[] = [];
-    for (const cycle of program.cycles) {
-      for (const week of cycle.weeks) {
-        for (const session of week.sessions) {
-          if (session.scheduledDate) continue;
-          const d = new Date(start);
-          d.setDate(start.getDate() + totalWeeks * 7 + session.dayOfWeek);
-          if (d.getTime() === day.getTime()) dated.push(session);
-        }
-        totalWeeks++;
-      }
-    }
-    return [...pinned, ...dated];
-  }
+  // Date placement is authoritative: if nothing native lands here we surface
+  // only the pinned ones.
+  //
+  // A program with no startDate places nothing. There used to be a day-of-week
+  // fallback here, but a bare weekday has no notion of *which week of the
+  // program* we are in, so every week of a cycle collapsed onto the same day —
+  // the calendar hid the pile-up by deduping on title (dropping genuinely
+  // different sessions that shared one) while the dashboard listed all of them.
+  // startDate is now required at every authoring entry point (the app forms and
+  // the MCP tools), so this branch only affects legacy documents; callers warn
+  // the user rather than silently showing nothing.
+  if (!program.startDate) return pinned;
 
-  // Pass 3: day-of-week fallback for undated programs (recurring weekly
-  // templates with no startDate). Mon=0 … Sun=6.
-  const dow = (day.getDay() + 6) % 7;
-  const recurring: Session[] = [];
+  const start = fromLocalISODate(program.startDate);
+  let totalWeeks = 0;
+  const dated: ScheduledSession[] = [];
   for (const cycle of program.cycles) {
     for (const week of cycle.weeks) {
       for (const session of week.sessions) {
         if (session.scheduledDate) continue;
-        if (session.dayOfWeek === dow) recurring.push(session);
+        const d = new Date(start);
+        d.setDate(start.getDate() + totalWeeks * 7 + session.dayOfWeek);
+        if (d.getTime() === day.getTime()) {
+          dated.push({ session, cycleNumber: cycle.cycleNumber, weekNumber: week.weekNumber });
+        }
       }
+      totalWeeks++;
     }
   }
-  return [...pinned, ...recurring];
+  return [...pinned, ...dated];
+}
+
+/** Sessions planned on `date`, without the cycle/week coordinates. */
+export function getSessionsForDate(program: Program | AthleteProgram, date: Date): Session[] {
+  return getScheduledSessionsForDate(program, date).map((s) => s.session);
 }
 
 export function getTodaySession(program: Program | AthleteProgram, forDate?: Date): Session | null {
   return getSessionsForDate(program, forDate ?? new Date())[0] ?? null;
+}
+
+/** Position of a session inside a program's cycles/weeks arrays. */
+export interface SessionCoords {
+  ci: number;
+  wi: number;
+  si: number;
+}
+
+/** Locates a session inside its program by reference identity.
+ *
+ *  Sessions have no stable id yet, so links that carry a session between pages
+ *  address it positionally (`?ci=&wi=&si=`). This turns a Session already read
+ *  out of a program (e.g. from getTodaySession) back into those indices, so a
+ *  card can deep-link to exactly the session it displays instead of letting the
+ *  target page guess. Reference identity is what makes it exact — two sessions
+ *  can be structurally identical.
+ *
+ *  Returns null when the session doesn't belong to this program. */
+export function findSessionCoords(
+  program: Program | AthleteProgram,
+  session: Session
+): SessionCoords | null {
+  for (let ci = 0; ci < program.cycles.length; ci++) {
+    const weeks = program.cycles[ci].weeks;
+    for (let wi = 0; wi < weeks.length; wi++) {
+      const si = weeks[wi].sessions.indexOf(session);
+      if (si !== -1) return { ci, wi, si };
+    }
+  }
+  return null;
 }
 
 export interface UpcomingSession {
