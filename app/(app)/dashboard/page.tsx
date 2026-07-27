@@ -8,22 +8,17 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getActiveProgram, getLogs, getTodaySession, getUpcomingSessions, getAthletesAdherence, updateProgram } from "@/lib/firestore";
 import SegmentView from "@/components/SegmentView";
 import { normalizeSession } from "@/lib/segments";
+import { toLocalISODate as toISODate } from "@/lib/dates";
 import type { AthleteAdherence } from "@/lib/firestore";
 import type { Program, Session, WorkoutLog } from "@/types";
 import { SESSION_TYPE_LABELS, MOOD_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import Avatar from "@/components/Avatar";
+import { sessionMeta } from "@/lib/sessionMeta";
+import SessionProfile from "@/components/SessionProfile";
+import { loadSummary } from "@/lib/load";
+import { buildAlerts, resolveThresholds, alertRank } from "@/lib/alerts";
 import Link from "next/link";
-
-const SESSION_TYPE_COLORS: Record<string, { color: string; bg: string }> = {
-  strength: { color: "#60A5FA", bg: "rgba(59,130,246,0.12)" },
-  hiit:     { color: "#FB7185", bg: "rgba(244,63,94,0.12)" },
-  cardio:   { color: "#FBBF24", bg: "rgba(245,158,11,0.12)" },
-  circuit:  { color: "#FACC15", bg: "rgba(250,204,21,0.12)" },
-  mobility: { color: "#34D399", bg: "rgba(52,211,153,0.12)" },
-  rest:     { color: "#94A3B8", bg: "rgba(148,163,184,0.12)" },
-  other:    { color: "#A78BFA", bg: "rgba(167,139,250,0.12)" },
-};
 
 type View = "coach" | "personal";
 
@@ -68,6 +63,26 @@ export default function DashboardPage() {
     );
   }, [program, todaySession]);
 
+  // One pass over the dashboard payload: load maths + alert engine per athlete.
+  // Memoized because it walks every athlete's 28-day log window.
+  const monitored = useMemo(() => {
+    const thresholds = resolveThresholds(
+      (coach?.settings as { alerts?: unknown } | undefined)?.alerts
+    );
+    return adherence.map((a) => {
+      const load = loadSummary(a.recentLogs);
+      const alerts = buildAlerts({
+        logs: a.recentLogs,
+        lastLogDate: a.lastLogDate,
+        load,
+        plannedLast7: a.plannedLast7,
+        loggedLast7: a.weekSessions,
+        thresholds,
+      });
+      return { ...a, load, alerts, rank: alertRank(alerts) };
+    });
+  }, [adherence, coach]);
+
   const oneWeekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
   const weekLogs = recentLogs.filter((l) => l.date.toMillis() > oneWeekAgo);
   const avgRPE =
@@ -107,7 +122,7 @@ export default function DashboardPage() {
 
   if (loading) return <LoadingSpinner className="min-h-screen" />;
 
-  const sessionColors = todaySession ? (SESSION_TYPE_COLORS[todaySession.type] ?? SESSION_TYPE_COLORS.strength) : null;
+  const sessionColors = todaySession ? sessionMeta(todaySession.type) : null;
 
   return (
     <div className="px-5 pt-6 space-y-6">
@@ -161,10 +176,17 @@ export default function DashboardPage() {
         <>
           <div className="grid grid-cols-3 gap-2.5">
             <StatCard label="Atleti attivi" value={String(adherence.filter(a => daysSince(a.lastLogDate) < 7).length)} />
-            <StatCard label="Sessioni sett." value={String(weekLogs.length)} />
+            {/* Athletes' sessions, not the coach's own: this card sits between
+                two athlete metrics, and it used to count the coach's personal
+                logs — capped at the 5 fetched for the "personal" view, so it was
+                wrong twice over. The personal count lives in the other tab. */}
+            <StatCard
+              label="Sessioni sett."
+              value={String(adherence.reduce((s, a) => s + a.weekSessions, 0))}
+            />
             <StatCard
               label="Da monitorare"
-              value={String(adherence.filter(a => daysSince(a.lastLogDate) >= 5).length)}
+              value={String(monitored.filter((a) => a.alerts.length > 0).length)}
               valueColor="var(--status-error, #EF4444)"
             />
           </div>
@@ -173,20 +195,29 @@ export default function DashboardPage() {
             <section>
               <div className="flex items-center justify-between mb-3">
                 <h2 className="section-label">I tuoi atleti</h2>
-                <Link href="/athletes" className="text-[12px] font-semibold" style={{ color: "var(--green-primary)" }}>
-                  Tutti →
-                </Link>
+                <div className="flex items-center gap-3">
+                  <Link href="/settings" className="text-[12px] font-semibold" style={{ color: "var(--text-muted)" }}>
+                    Avvisi
+                  </Link>
+                  <Link href="/athletes" className="text-[12px] font-semibold" style={{ color: "var(--green-primary)" }}>
+                    Tutti →
+                  </Link>
+                </div>
               </div>
               <div className="card overflow-hidden">
-                {[...adherence]
+                {[...monitored]
+                  // Whoever needs the coach most, first: severity, then how
+                  // many things are wrong, then staleness.
                   .sort((a, b) =>
-                    daysSince(a.lastLogDate) === daysSince(b.lastLogDate)
-                      ? a.weekSessions - b.weekSessions
+                    b.rank !== a.rank
+                      ? b.rank - a.rank
+                      : b.alerts.length !== a.alerts.length
+                      ? b.alerts.length - a.alerts.length
                       : daysSince(b.lastLogDate) - daysSince(a.lastLogDate)
                   )
-                  .map(({ athlete, weekSessions, lastLogDate }) => {
+                  .map(({ athlete, weekSessions, lastLogDate, alerts, load }) => {
                     const days = daysSince(lastLogDate);
-                    const inactive = days >= 5;
+                    const inactive = alerts.length > 0;
                     return (
                       <Link
                         key={athlete.id}
@@ -207,9 +238,16 @@ export default function DashboardPage() {
                           <p className="text-[14px] font-medium truncate" style={{ color: "var(--text-primary)" }}>
                             {athlete.name}
                           </p>
-                          <p className="text-[11px] mt-0.5" style={{ color: "var(--text-faint)" }}>
-                            {weekSessions} {weekSessions === 1 ? "sessione" : "sessioni"} questa settimana
-                          </p>
+                          {alerts.length > 0 ? (
+                            <p className="text-[11px] mt-0.5 truncate" style={{ color: alerts[0].severity === "critical" ? "#EF4444" : "#F59E0B" }}>
+                              {alerts[0].label}
+                              {alerts.length > 1 && ` · +${alerts.length - 1}`}
+                            </p>
+                          ) : (
+                            <p className="text-[11px] mt-0.5" style={{ color: "var(--text-faint)" }}>
+                              {weekSessions} {weekSessions === 1 ? "sessione" : "sessioni"} · carico {load.weekLoad || "—"}
+                            </p>
+                          )}
                         </div>
                         <p
                           className="text-[12px] shrink-0 font-medium"
@@ -268,7 +306,7 @@ export default function DashboardPage() {
             <h2 className="section-label mb-3">Sessione di oggi</h2>
 
             {todaySession ? (
-              <div className="card-hero overflow-hidden" style={{ border: `1px solid ${sessionColors?.bg ?? "var(--border-default)"}` }}>
+              <div className="card-hero overflow-hidden" style={{ border: `1px solid ${sessionColors?.tint ?? "var(--border-default)"}` }}>
                 <div
                   className="px-4 pt-4 pb-3 cursor-pointer active:opacity-80 transition-opacity"
                   onClick={() => setSessionExpanded((v) => !v)}
@@ -277,9 +315,9 @@ export default function DashboardPage() {
                     <div className="flex-1 min-w-0">
                       <span
                         className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold"
-                        style={{ background: sessionColors?.bg, color: sessionColors?.color }}
+                        style={{ background: sessionColors?.tint, color: sessionColors?.color }}
                       >
-                        {SESSION_TYPE_LABELS[todaySession.type]}
+                        {sessionColors?.icon} {SESSION_TYPE_LABELS[todaySession.type]}
                       </span>
                       <h3 className="text-[17px] font-bold mt-1.5 truncate" style={{ color: "var(--text-primary)" }}>
                         {todaySession.title}
@@ -296,6 +334,7 @@ export default function DashboardPage() {
                       </p>
                     </div>
                   </div>
+                  <SessionProfile session={todaySession} height={30} className="mt-3" />
                   <div className="flex justify-center mt-2">
                     <svg
                       width="16" height="16"
@@ -409,7 +448,7 @@ export default function DashboardPage() {
               </div>
               <div className="space-y-2">
                 {recentLogs.slice(0, 3).map((log) => {
-                  const tc = SESSION_TYPE_COLORS[log.plannedSession?.type ?? ""] ?? SESSION_TYPE_COLORS.strength;
+                  const tc = sessionMeta(log.plannedSession?.type ?? "");
                   return (
                     <Link
                       key={log.id}
@@ -447,14 +486,6 @@ function daysSince(d: Date | null): number {
   return Math.floor((Date.now() - d.getTime()) / (24 * 60 * 60 * 1000));
 }
 
-function toISODate(d: Date): string {
-  return [
-    d.getFullYear(),
-    String(d.getMonth() + 1).padStart(2, "0"),
-    String(d.getDate()).padStart(2, "0"),
-  ].join("-");
-}
-
 function UpcomingRow({
   date,
   session,
@@ -465,7 +496,7 @@ function UpcomingRow({
   onMove: (newISODate: string) => void;
 }) {
   const [open, setOpen] = useState(false);
-  const tc = SESSION_TYPE_COLORS[session.type] ?? SESSION_TYPE_COLORS.strength;
+  const tc = sessionMeta(session.type);
   const iso = toISODate(date);
   const meta = [
     session.durationMin > 0 ? `⏱ ${session.durationMin} min` : null,
@@ -489,9 +520,9 @@ function UpcomingRow({
         <div className="flex-1 min-w-0">
           <span
             className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold"
-            style={{ background: tc.bg, color: tc.color }}
+            style={{ background: tc.tint, color: tc.color }}
           >
-            {SESSION_TYPE_LABELS[session.type]}
+            {tc.icon} {SESSION_TYPE_LABELS[session.type]}
           </span>
           <p className="text-[14px] font-medium truncate mt-1" style={{ color: "var(--text-primary)" }}>
             {session.title}
@@ -501,6 +532,7 @@ function UpcomingRow({
               {meta}
             </p>
           )}
+          <SessionProfile session={session} height={18} className="mt-1.5 opacity-80" />
         </div>
         <svg
           width="14" height="14"

@@ -26,7 +26,7 @@ const REST_PRESETS = [
 export default function ExerciseForm({ exercise, index, canRemove, onChange, onRemove }: Props) {
   const [expanded, setExpanded] = useState(false);
 
-  const hasExtras = !!(exercise.variants || exercise.notes);
+  const hasExtras = !!(exercise.variants || exercise.notes || exercise.videoUrl);
 
   return (
     <div className="rounded-xl border border-slate-600 bg-slate-800/50 overflow-hidden">
@@ -127,7 +127,7 @@ export default function ExerciseForm({ exercise, index, canRemove, onChange, onR
           >
             <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
           </svg>
-          {expanded ? "Nascondi dettagli" : `Varianti & note${hasExtras ? " ✎" : ""}`}
+          {expanded ? "Nascondi dettagli" : `Varianti, note & video${hasExtras ? " ✎" : ""}`}
         </button>
 
         {/* Expanded: variants + notes */}
@@ -141,6 +141,17 @@ export default function ExerciseForm({ exercise, index, canRemove, onChange, onR
                 onChange={(e) => onChange({ ...exercise, variants: e.target.value || undefined })}
                 placeholder="Es. Se non hai bilanciere usa manubri · versione più facile / difficile…"
                 className={`${inputCls} resize-none`}
+              />
+            </div>
+            <div>
+              <label className={labelCls}>Video dimostrativo</label>
+              <input
+                type="url"
+                inputMode="url"
+                value={exercise.videoUrl ?? ""}
+                onChange={(e) => onChange({ ...exercise, videoUrl: e.target.value || undefined })}
+                placeholder="https://youtube.com/watch?v=…"
+                className={inputCls}
               />
             </div>
             <div>

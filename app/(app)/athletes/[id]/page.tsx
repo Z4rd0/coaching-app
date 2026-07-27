@@ -5,6 +5,8 @@ import { useRouter, useParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { getAthlete, getAthletePrograms, getLogs, updateAthlete } from "@/lib/firestore";
+import { loadSummary, type LoadSummary } from "@/lib/load";
+import LoadCard from "@/components/LoadCard";
 import { buildSingleLogExport, buildFullExport, downloadMarkdown } from "@/lib/exportLogs";
 
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? "";
@@ -38,17 +40,21 @@ export default function AthleteDetailPage() {
   const [sport, setSport] = useState("");
   const [goals, setGoals] = useState("");
   const [notes, setNotes] = useState("");
+  const [load, setLoad] = useState<LoadSummary | null>(null);
 
   useEffect(() => {
     if (!user) return;
     Promise.all([
       getAthlete(user.uid, id),
       getAthletePrograms(user.uid, id),
-      getLogs(user.uid, id, 5),
+      // 60 logs comfortably covers the 28-day window the load maths needs,
+      // while the card list below still shows only the most recent few.
+      getLogs(user.uid, id, 60),
     ]).then(([a, p, l]) => {
       setAthlete(a);
       setPrograms(p);
       setLogs(l);
+      setLoad(loadSummary(l));
       if (a) {
         setName(a.name);
         setSport(a.sport ?? "");
@@ -307,6 +313,9 @@ export default function AthleteDetailPage() {
         )}
       </div>
 
+      {/* Training load */}
+      {load && <LoadCard load={load} />}
+
       {/* Recent logs */}
       <div>
         <div className="flex items-center justify-between mb-3">
@@ -329,7 +338,7 @@ export default function AthleteDetailPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {logs.map((log) => (
+            {logs.slice(0, 5).map((log) => (
               <Link
                 key={log.id}
                 href={`/athletes/${id}/logs/${log.id}`}
