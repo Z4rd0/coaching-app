@@ -12,23 +12,39 @@ import {
   getTodaySession,
   getGroupsForAthlete,
   getActiveGroupProgram,
+  findSessionCoords,
 } from "@/lib/firestore";
+import type { SessionCoords } from "@/lib/firestore";
 import type { AthleteProgram, GroupProgram, WorkoutLog } from "@/types";
 import { SESSION_TYPE_LABELS, MOOD_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
+import { sessionMeta } from "@/lib/sessionMeta";
 
-const SESSION_TYPE_COLORS: Record<string, { color: string; bg: string }> = {
-  strength: { color: "#60A5FA", bg: "rgba(59,130,246,0.12)" },
-  hiit:     { color: "#FB7185", bg: "rgba(244,63,94,0.12)" },
-  cardio:   { color: "#FBBF24", bg: "rgba(245,158,11,0.12)" },
-  circuit:  { color: "#FACC15", bg: "rgba(250,204,21,0.12)" },
-};
+/** Link to the log form with one specific planned session pre-selected.
+ *  Falls back to the bare form when the session can't be located. */
+function logHref(
+  programId: string,
+  coords: SessionCoords | null,
+  sessionId?: string,
+  groupId?: string
+): string {
+  if (!coords && !sessionId) return "/athlete/log";
+  const q = new URLSearchParams({
+    programId,
+    // sessionId is what the log page prefers; the indices remain for programs
+    // whose sessions have no id yet.
+    ...(sessionId ? { sessionId } : {}),
+    ...(coords ? { ci: String(coords.ci), wi: String(coords.wi), si: String(coords.si) } : {}),
+    ...(groupId ? { groupId } : {}),
+  });
+  return `/athlete/log?${q.toString()}`;
+}
 
 export default function AthleteDashboardPage() {
   const { user, athleteAccess, signOut } = useAuth();
   const router = useRouter();
   const [program, setProgram] = useState<AthleteProgram | null>(null);
-  const [groupPrograms, setGroupPrograms] = useState<(GroupProgram & { groupName: string })[]>([]);
+  const [groupPrograms, setGroupPrograms] = useState<(GroupProgram & { groupName: string; groupId: string })[]>([]);
   const [recentLogs, setRecentLogs] = useState<WorkoutLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"solo" | "group">("solo");
@@ -66,9 +82,14 @@ export default function AthleteDashboardPage() {
         Promise.all(
           groups.map(async (g) => {
             const p = await getActiveGroupProgram(coachId, g.id);
-            return p ? { ...p, groupName: g.name } : null;
+            // groupId is kept alongside the program: the log page keys a session
+            // on (groupId, programId, ci, wi, si), so a card can't deep-link
+            // without it.
+            return p ? { ...p, groupName: g.name, groupId: g.id } : null;
           })
-        ).then((res) => res.filter((p): p is GroupProgram & { groupName: string } => p !== null))
+        ).then((res) =>
+          res.filter((p): p is GroupProgram & { groupName: string; groupId: string } => p !== null)
+        )
       ),
     ]).then(([prog, logs, gProgs]) => {
       setProgram(prog);
@@ -86,7 +107,18 @@ export default function AthleteDashboardPage() {
   const todayGroupSessions = useMemo(
     () =>
       groupPrograms
-        .map((p) => ({ groupName: p.groupName, programName: p.name, session: getTodaySession(p) }))
+        .map((p) => {
+          const session = getTodaySession(p);
+          return {
+            groupName: p.groupName,
+            programName: p.name,
+            session,
+            // Deep-link to THIS session. Without it the log page falls back to
+            // the personal program's session of the day, so tapping a group card
+            // logged the wrong workout.
+            href: session ? logHref(p.id, findSessionCoords(p, session), session.id, p.groupId) : "/athlete/log",
+          };
+        })
         .filter((g) => g.session !== null),
     [groupPrograms]
   );
@@ -161,7 +193,11 @@ export default function AthleteDashboardPage() {
             <TodaySessionCard
               title={program.name}
               session={todaySession}
-              href="/athlete/log"
+              href={
+                todaySession
+                  ? logHref(program.id, findSessionCoords(program, todaySession), todaySession.id)
+                  : "/athlete/log"
+              }
             />
           ) : (
             <div className="card px-4 py-5 text-center">
@@ -205,7 +241,7 @@ export default function AthleteDashboardPage() {
                 key={`${g.groupName}-${g.programName}`}
                 title={`👥 ${g.groupName}`}
                 session={g.session}
-                href="/athlete/log"
+                href={g.href}
               />
             ))
           ) : (
@@ -239,7 +275,7 @@ export default function AthleteDashboardPage() {
           </div>
           <div className="space-y-2">
             {recentLogs.slice(0, 3).map((log) => {
-              const tc = SESSION_TYPE_COLORS[log.plannedSession?.type ?? ""] ?? SESSION_TYPE_COLORS.strength;
+              const tc = sessionMeta(log.plannedSession?.type ?? "");
               return (
                 <div key={log.id} className="card-2 flex items-center gap-3 px-4 py-3">
                   <span className="text-xl">{MOOD_LABELS[log.mood]}</span>
@@ -283,13 +319,13 @@ function TodaySessionCard({
   href: string;
 }) {
   const tc = session
-    ? (SESSION_TYPE_COLORS[session.type] ?? SESSION_TYPE_COLORS.strength)
+    ? sessionMeta(session.type)
     : null;
 
   return (
     <div
       className="card-hero overflow-hidden"
-      style={{ border: `1px solid ${tc?.bg ?? "var(--border-default)"}` }}
+      style={{ border: `1px solid ${tc?.tint ?? "var(--border-default)"}` }}
     >
       <div className="px-4 pt-4 pb-2">
         <p className="section-label mb-2">{title}</p>
@@ -299,7 +335,7 @@ function TodaySessionCard({
               <div className="flex-1 min-w-0">
                 <span
                   className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold"
-                  style={{ background: tc?.bg, color: tc?.color }}
+                  style={{ background: tc?.tint, color: tc?.color }}
                 >
                   {SESSION_TYPE_LABELS[session.type]}
                 </span>

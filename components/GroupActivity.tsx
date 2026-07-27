@@ -4,15 +4,7 @@ import { format } from "date-fns";
 import { it } from "date-fns/locale";
 import type { Group, GroupFeedEntry } from "@/types";
 import { SESSION_TYPE_LABELS } from "@/types";
-
-const TYPE_COLOR: Record<string, string> = {
-  strength: "bg-blue-500",
-  cardio: "bg-orange-400",
-  mobility: "bg-purple-400",
-  rest: "bg-slate-500",
-  other: "bg-slate-400",
-  circuit: "bg-yellow-400",
-};
+import { sessionMeta } from "@/lib/sessionMeta";
 
 const MEDALS = ["🥇", "🥈", "🥉"];
 
@@ -146,7 +138,7 @@ export default function GroupActivity({ entries, stats, highlightUid }: Props) {
                     </p>
                   </div>
                   {e.sessionType && (
-                    <div className={`w-2 h-2 rounded-full shrink-0 ${TYPE_COLOR[e.sessionType] ?? "bg-slate-500"}`} />
+                    <div className={`w-2 h-2 rounded-full shrink-0 ${sessionMeta(e.sessionType).dot}`} />
                   )}
                 </div>
               );

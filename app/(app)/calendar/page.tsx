@@ -8,110 +8,66 @@ import {
 } from "date-fns";
 import { it } from "date-fns/locale";
 import { useAuth } from "@/contexts/AuthContext";
-import { getActiveProgram, getLogs } from "@/lib/firestore";
-import type { Program, WorkoutLog, Session } from "@/types";
+import { getActiveProgram, getLogs, getScheduledSessionsForDate } from "@/lib/firestore";
+import type { ScheduledSession } from "@/lib/firestore";
+import { toLocalISODate } from "@/lib/dates";
+import { sessionLoad } from "@/lib/load";
+import type { Program, WorkoutLog } from "@/types";
 import { SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import SegmentView from "@/components/SegmentView";
 import { normalizeSession } from "@/lib/segments";
+import { sessionMeta } from "@/lib/sessionMeta";
+import SessionProfile from "@/components/SessionProfile";
 import Link from "next/link";
 
 const WEEK_DAYS = ["L", "M", "M", "G", "V", "S", "D"];
 
-// ─── Session date calculation ─────────────────────────────────────────────────
+/** What a calendar day is telling the coach at a glance.
+ *
+ *  Two identical grey dots ("something is logged" / "something is planned")
+ *  can't distinguish the one case that matters — a planned session that was
+ *  skipped — so the month read as uniformly busy whatever actually happened. */
+type DayStatus = "done" | "extra" | "missed" | "planned" | "empty";
 
-interface ScheduledSession {
-  session: Session;
-  cycleNumber: number;
-  weekNumber: number;
+const DAY_STATUS_COLOR: Record<Exclude<DayStatus, "empty">, string> = {
+  done: "#22C55E",     // planned and logged
+  extra: "#60A5FA",    // logged, nothing was planned
+  missed: "#EF4444",   // planned, not logged, day is over
+  planned: "#94A3B8",  // still to come
+};
+
+function dayStatus(planned: number, logged: number, day: Date, today: Date): DayStatus {
+  if (logged > 0) return planned > 0 ? "done" : "extra";
+  if (planned === 0) return "empty";
+  return day < today ? "missed" : "planned";
 }
 
-function getSessionsForDate(date: Date, program: Program): ScheduledSession[] {
-  const result: ScheduledSession[] = [];
-  const targetISO = (() => {
-    const d = new Date(date);
-    d.setHours(0, 0, 0, 0);
-    return d.toISOString().slice(0, 10);
-  })();
-
-  for (const cycle of program.cycles) {
-    for (const week of cycle.weeks) {
-      for (const session of week.sessions) {
-        if (session.scheduledDate === targetISO) {
-          result.push({ session, cycleNumber: cycle.cycleNumber, weekNumber: week.weekNumber });
-        }
-      }
-    }
-  }
-
-  if (program.startDate) {
-    const start = new Date(program.startDate + "T00:00:00");
-    const target = new Date(date);
-    target.setHours(0, 0, 0, 0);
-    start.setHours(0, 0, 0, 0);
-    let totalWeeks = 0;
-    for (const cycle of program.cycles) {
-      for (const week of cycle.weeks) {
-        for (const session of week.sessions) {
-          if (session.scheduledDate) continue;
-          const sessionDate = new Date(start);
-          sessionDate.setDate(start.getDate() + totalWeeks * 7 + session.dayOfWeek);
-          if (isSameDay(sessionDate, target)) {
-            result.push({ session, cycleNumber: cycle.cycleNumber, weekNumber: week.weekNumber });
-          }
-        }
-        totalWeeks++;
-      }
-    }
-    return result;
-  }
-
-  const dow = (date.getDay() + 6) % 7;
-  const seen = new Set<string>();
-  for (const cycle of program.cycles) {
-    for (const week of cycle.weeks) {
-      for (const session of week.sessions) {
-        if (session.scheduledDate) continue;
-        if (session.dayOfWeek === dow && !seen.has(session.title)) {
-          seen.add(session.title);
-          result.push({ session, cycleNumber: cycle.cycleNumber, weekNumber: week.weekNumber });
-        }
-      }
-    }
-  }
-  return result;
-}
+// Session placement lives in lib/firestore (getScheduledSessionsForDate) so the
+// calendar, the dashboard and the log pages can never disagree on which day a
+// session belongs to.
 
 // ─── Colour map ───────────────────────────────────────────────────────────────
 
-const TYPE_COLOR: Record<string, string> = {
-  strength:  "bg-blue-500",
-  cardio:    "bg-orange-400",
-  mobility:  "bg-purple-400",
-  circuit:   "bg-yellow-400",
-  rest:      "bg-slate-500",
-  other:     "bg-slate-400",
-};
-
-const TYPE_BADGE: Record<string, string> = {
-  strength:  "bg-blue-500/20 text-blue-300",
-  cardio:    "bg-orange-400/20 text-orange-300",
-  mobility:  "bg-purple-400/20 text-purple-300",
-  circuit:   "bg-yellow-400/20 text-yellow-300",
-  rest:      "bg-slate-600/40 text-slate-400",
-  other:     "bg-slate-600/40 text-slate-400",
-};
-
 const DAYS_SHORT = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+
+const MOOD_EMOJI: Record<number, string> = { 1: "😫", 2: "😕", 3: "😐", 4: "🙂", 5: "😄" };
+
+const RPE_COLOR = (rpe: number) =>
+  rpe <= 3 ? "#22C55E" : rpe <= 5 ? "#84CC16" : rpe <= 7 ? "#EAB308" : rpe <= 8 ? "#F97316" : "#EF4444";
 
 // ─── Session detail sheet ─────────────────────────────────────────────────────
 
 function SessionSheet({
   item,
+  index,
   date,
   onClose,
 }: {
   item: ScheduledSession;
+  /** Position of this session among the day's sessions — handed to /log so it
+   *  pre-selects the one actually shown here, not just the day's first. */
+  index: number;
   date: Date;
   onClose: () => void;
 }) {
@@ -138,8 +94,8 @@ function SessionSheet({
           <div className="flex items-start justify-between gap-3 pt-2">
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2 mb-1">
-                <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${TYPE_BADGE[session.type] ?? "bg-slate-600/40 text-slate-400"}`}>
-                  {SESSION_TYPE_LABELS[session.type]}
+                <span className={`text-xs font-semibold px-2.5 py-0.5 rounded-full ${sessionMeta(session.type).badge}`}>
+                  {sessionMeta(session.type).icon} {SESSION_TYPE_LABELS[session.type]}
                 </span>
                 <span className="text-xs text-slate-500">
                   Ciclo {cycleNumber} · Sett. {weekNumber}
@@ -158,6 +114,9 @@ function SessionSheet({
               </svg>
             </button>
           </div>
+
+          {/* Shape of the session at a glance */}
+          <SessionProfile session={session} height={32} />
 
           {/* Stats row */}
           <div className="grid grid-cols-3 gap-2">
@@ -231,6 +190,16 @@ function SessionSheet({
                     {ex.variants && (
                       <p className="text-xs text-slate-500 italic">↔ {ex.variants}</p>
                     )}
+                    {ex.videoUrl && (
+                      <a
+                        href={ex.videoUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-primary"
+                      >
+                        ▶ Guarda il video
+                      </a>
+                    )}
                     {ex.notes && (
                       <p className="text-xs text-slate-400">{ex.notes}</p>
                     )}
@@ -250,7 +219,7 @@ function SessionSheet({
 
           {/* CTA */}
           <Link
-            href={`/log?date=${date.toISOString().slice(0, 10)}`}
+            href={`/log?date=${toLocalISODate(date)}&idx=${index}`}
             onClick={onClose}
             className="block w-full text-center bg-primary text-white font-bold py-3.5 rounded-2xl"
           >
@@ -271,7 +240,7 @@ export default function CalendarPage() {
   const [logs, setLogs] = useState<WorkoutLog[]>([]);
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState<Date>(new Date());
-  const [sheetSession, setSheetSession] = useState<ScheduledSession | null>(null);
+  const [sheetSession, setSheetSession] = useState<{ item: ScheduledSession; index: number } | null>(null);
 
   useEffect(() => {
     if (!user) return;
@@ -301,14 +270,33 @@ export default function CalendarPage() {
   const calEnd = endOfWeek(monthEnd, { weekStartsOn: 1 });
   const days = eachDayOfInterval({ start: calStart, end: calEnd });
 
+  const today0 = new Date();
+  today0.setHours(0, 0, 0, 0);
+
   const logsForDate = (date: Date) =>
     logs.filter((l) => isSameDay(l.date.toDate(), date));
 
   const scheduledForDate = (date: Date): ScheduledSession[] =>
-    program ? getSessionsForDate(date, program) : [];
+    program ? getScheduledSessionsForDate(program, date) : [];
 
   const selectedLogs = logsForDate(selected);
   const selectedScheduled = scheduledForDate(selected);
+
+  // Totals for the week containing the selected day.
+  const weekTotals = (() => {
+    const start = startOfWeek(selected, { weekStartsOn: 1 });
+    const week = eachDayOfInterval({ start, end: endOfWeek(selected, { weekStartsOn: 1 }) });
+    let planned = 0, logged = 0, minutes = 0, load = 0;
+    for (const d of week) {
+      planned += scheduledForDate(d).filter((x) => x.session.type !== "rest").length;
+      for (const l of logsForDate(d)) {
+        logged++;
+        minutes += l.actualDurationMin ?? 0;
+        load += sessionLoad(l);
+      }
+    }
+    return { planned, logged, minutes, load: Math.round(load) };
+  })();
 
   if (loading) return <LoadingSpinner className="min-h-screen" />;
 
@@ -322,11 +310,17 @@ export default function CalendarPage() {
         </Link>
       </div>
 
-      {/* No startDate warning */}
+      {/* Without a start date nothing can be placed on the calendar. Say so
+          loudly: an empty calendar with no explanation is the failure mode this
+          warning exists to prevent. */}
       {program && !program.startDate && (
         <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-xs text-amber-300">
-          Il programma non ha una data di inizio — le sessioni vengono mostrate per giorno della settimana.{" "}
-          <Link href={`/programs/${program.id}/edit`} className="underline font-medium">Aggiungi la data</Link>
+          <span className="font-semibold">Nessuna sessione in calendario:</span> il programma
+          “{program.name}” non ha una data di inizio, quindi non è possibile sapere in che
+          settimana ti trovi.{" "}
+          <Link href={`/programs/${program.id}/edit`} className="underline font-medium">
+            Aggiungi la data di inizio
+          </Link>
         </div>
       )}
 
@@ -363,6 +357,7 @@ export default function CalendarPage() {
           const dayLogs = logsForDate(day);
           const dayScheduled = scheduledForDate(day);
           const hasDot = dayLogs.length > 0 || dayScheduled.length > 0;
+          const status = dayStatus(dayScheduled.length, dayLogs.length, day, today0);
 
           return (
             <button
@@ -384,15 +379,11 @@ export default function CalendarPage() {
               }`}>
                 {format(day, "d")}
               </span>
-              {hasDot && isCurrentMonth && (
-                <div className="flex gap-0.5 mt-0.5">
-                  {dayLogs.length > 0 && (
-                    <span className={`w-1.5 h-1.5 rounded-full ${isSelectedDay ? "bg-white" : "bg-primary"}`} />
-                  )}
-                  {dayScheduled.length > 0 && dayLogs.length === 0 && (
-                    <span className={`w-1.5 h-1.5 rounded-full ${isSelectedDay ? "bg-white/60" : "bg-slate-500"}`} />
-                  )}
-                </div>
+              {hasDot && isCurrentMonth && status !== "empty" && (
+                <span
+                  className="w-1.5 h-1.5 rounded-full mt-0.5"
+                  style={{ background: isSelectedDay ? "#fff" : DAY_STATUS_COLOR[status] }}
+                />
               )}
             </button>
           );
@@ -400,9 +391,29 @@ export default function CalendarPage() {
       </div>
 
       {/* Legend */}
-      <div className="flex gap-4 text-xs text-slate-400">
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-primary inline-block" /> Log registrato</span>
-        <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-slate-500 inline-block" /> Sessione programmata</span>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+        {([["done", "Svolto"], ["extra", "Fuori programma"], ["missed", "Saltato"], ["planned", "In programma"]] as const).map(
+          ([k, label]) => (
+            <span key={k} className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full inline-block" style={{ background: DAY_STATUS_COLOR[k] }} />
+              {label}
+            </span>
+          )
+        )}
+      </div>
+
+      {/* D3 — the coach thinks in weeks, so summarise the selected one. */}
+      <div className="flex gap-2">
+        {[
+          ["Sessioni", `${weekTotals.logged}/${weekTotals.planned}`],
+          ["Minuti", String(weekTotals.minutes)],
+          ["Carico", weekTotals.load > 0 ? String(weekTotals.load) : "—"],
+        ].map(([label, value]) => (
+          <div key={label} className="flex-1 bg-slate-800 rounded-xl px-3 py-2 border border-slate-700 text-center">
+            <p className="text-sm font-bold text-white tabular-nums">{value}</p>
+            <p className="text-[10px] text-slate-400">{label} · settimana</p>
+          </div>
+        ))}
       </div>
 
       {/* Selected day detail */}
@@ -424,7 +435,13 @@ export default function CalendarPage() {
                 <div className="w-2 h-8 bg-primary rounded-full" />
                 <div className="flex-1">
                   <p className="text-sm font-medium text-white">{log.plannedSession?.title || "Sessione libera"}</p>
-                  <p className="text-xs text-slate-400">{log.actualDurationMin} min · RPE {log.perceivedRPE}</p>
+                  {/* D9 — RPE and mood are already collected; showing them here
+                      turns "trained" into "how it went" without a tap. */}
+                  <p className="text-xs text-slate-400">
+                    {log.actualDurationMin} min ·{" "}
+                    <span style={{ color: RPE_COLOR(log.perceivedRPE) }}>RPE {log.perceivedRPE}</span>
+                    {log.mood ? ` · ${MOOD_EMOJI[log.mood] ?? ""}` : ""}
+                  </p>
                 </div>
               </Link>
             ))}
@@ -441,10 +458,10 @@ export default function CalendarPage() {
                 <button
                   key={i}
                   type="button"
-                  onClick={() => setSheetSession(item)}
+                  onClick={() => setSheetSession({ item, index: i })}
                   className="w-full flex items-center gap-3 bg-slate-800 rounded-xl p-3 border border-slate-700 hover:border-slate-600 transition-colors text-left"
                 >
-                  <div className={`w-2 h-8 rounded-full shrink-0 ${TYPE_COLOR[session.type] || "bg-slate-500"}`} />
+                  <div className={`w-2 h-8 rounded-full shrink-0 ${sessionMeta(session.type).dot}`} />
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-white">{session.title || SESSION_TYPE_LABELS[session.type]}</p>
                     <p className="text-xs text-slate-400">
@@ -484,7 +501,12 @@ export default function CalendarPage() {
 
       {/* Session detail sheet */}
       {sheetSession && (
-        <SessionSheet item={sheetSession} date={selected} onClose={() => setSheetSession(null)} />
+        <SessionSheet
+          item={sheetSession.item}
+          index={sheetSession.index}
+          date={selected}
+          onClose={() => setSheetSession(null)}
+        />
       )}
     </div>
   );

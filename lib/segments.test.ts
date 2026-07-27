@@ -323,3 +323,42 @@ describe("serializeProgramForWrite", () => {
     expect(serializeProgramForWrite(partial)).toEqual(partial);
   });
 });
+
+describe("serializeSessionForWrite — stable session id", () => {
+  it("assigns an id to a session that has none", () => {
+    const out = serializeSessionForWrite({
+      dayOfWeek: 0, type: "strength", title: "A", exercises: [],
+      targetRPE: 7, durationMin: 60, notes: "",
+    } as Session);
+    expect(out.id).toBeTruthy();
+  });
+
+  it("never regenerates an existing id", () => {
+    // Regenerating would break every link and every log that references the
+    // session — the whole point of the id is that it survives edits.
+    const session = {
+      id: "keep-me", dayOfWeek: 0, type: "strength", title: "A", exercises: [],
+      targetRPE: 7, durationMin: 60, notes: "",
+    } as Session;
+    expect(serializeSessionForWrite(session).id).toBe("keep-me");
+    // …including across repeated writes (edit → save → edit → save).
+    expect(serializeSessionForWrite(serializeSessionForWrite(session)).id).toBe("keep-me");
+  });
+
+  it("gives distinct ids to distinct sessions", () => {
+    const mk = () => serializeSessionForWrite({
+      dayOfWeek: 0, type: "strength", title: "A", exercises: [],
+      targetRPE: 7, durationMin: 60, notes: "",
+    } as Session).id;
+    expect(mk()).not.toBe(mk());
+  });
+
+  it("preserves the id on hybrid sessions too", () => {
+    const out = serializeSessionForWrite({
+      id: "hyb-1", dayOfWeek: 0, type: "hybrid", title: "H", exercises: [],
+      targetRPE: 7, durationMin: 60, notes: "",
+      segments: [{ id: "seg-0", kind: "note", title: "x" }],
+    } as Session);
+    expect(out.id).toBe("hyb-1");
+  });
+});

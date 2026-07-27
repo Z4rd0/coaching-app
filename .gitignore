@@ -34,3 +34,10 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local operational artefacts — MUST NOT be committed.
+# athleteAccess-strava.bak.json is a plaintext dump of an athlete's Strava
+# OAuth tokens taken before the ALTO-1 migration; this repo is public.
+athleteAccess-strava.bak.json
+*.bak.json
+backup.err

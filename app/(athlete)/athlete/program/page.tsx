@@ -10,17 +10,11 @@ import LoadingSpinner from "@/components/LoadingSpinner";
 import CardioIntervals from "@/components/CardioIntervals";
 import SegmentView from "@/components/SegmentView";
 import { normalizeSession } from "@/lib/segments";
+import { sessionMeta } from "@/lib/sessionMeta";
+import SessionProfile from "@/components/SessionProfile";
 
 /** Personal program, or a shared group program tagged with its group name and id */
 type DisplayProgram = AthleteProgram & { groupName?: string; groupId?: string };
-
-const TYPE_COLOR: Record<string, string> = {
-  strength: "bg-blue-500",
-  cardio: "bg-orange-400",
-  mobility: "bg-purple-400",
-  rest: "bg-slate-500",
-  other: "bg-slate-400",
-};
 
 const DAYS = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
@@ -154,8 +148,13 @@ export default function AthleteProgramPage() {
                           {week.sessions.map((session, si) => {
                             const k = `${ci}-${wi}-${si}`;
                             const isOpen = expandedKeys.has(k);
+                            // sessionId when the session has one (survives
+                            // reordering); indices stay as the fallback for
+                            // programs not yet touched by the id backfill.
                             const logUrl = selected
-                              ? `/athlete/log?programId=${selected.id}&ci=${ci}&wi=${wi}&si=${si}${selected.groupId ? `&groupId=${selected.groupId}` : ""}`
+                              ? `/athlete/log?programId=${selected.id}&ci=${ci}&wi=${wi}&si=${si}` +
+                                (session.id ? `&sessionId=${session.id}` : "") +
+                                (selected.groupId ? `&groupId=${selected.groupId}` : "")
                               : "/athlete/log";
                             return (
                               <div key={si}>
@@ -165,7 +164,7 @@ export default function AthleteProgramPage() {
                                     className="flex-1 flex items-center gap-3 px-4 py-3 text-left hover:bg-slate-700/30 transition-colors"
                                     onClick={() => toggleKey(k)}
                                   >
-                                    <div className={`w-2 h-2 rounded-full shrink-0 ${TYPE_COLOR[session.type] ?? "bg-slate-500"}`} />
+                                    <div className={`w-2 h-2 rounded-full shrink-0 ${sessionMeta(session.type).dot}`} />
                                     <div className="flex-1 min-w-0">
                                       <div className="flex items-center gap-2 flex-wrap">
                                         {session.scheduledDate ? (
@@ -174,7 +173,9 @@ export default function AthleteProgramPage() {
                                           <span className="text-xs text-slate-400">{DAYS[session.dayOfWeek]}</span>
                                         )}
                                         <span className="text-xs text-slate-600">·</span>
-                                        <span className="text-xs text-slate-400">{SESSION_TYPE_LABELS[session.type]}</span>
+                                        <span className="text-xs text-slate-400">
+                                          {sessionMeta(session.type).icon} {SESSION_TYPE_LABELS[session.type]}
+                                        </span>
                                         {session.title && (
                                           <>
                                             <span className="text-xs text-slate-600">·</span>
@@ -190,6 +191,7 @@ export default function AthleteProgramPage() {
                                           : ""}
                                         {session.durationMin} min · RPE {session.targetRPE}
                                       </p>
+                                      <SessionProfile session={session} height={14} className="mt-1 opacity-70" />
                                     </div>
                                     <svg
                                       className={`w-4 h-4 text-slate-500 transition-transform shrink-0 ${isOpen ? "rotate-90" : ""}`}
@@ -198,12 +200,18 @@ export default function AthleteProgramPage() {
                                       <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
                                     </svg>
                                   </button>
-                                  <Link
-                                    href={logUrl}
-                                    className="shrink-0 mx-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
-                                  >
-                                    Logga →
-                                  </Link>
+                                  {/* Rest days aren't loggable — the log page's
+                                      session picker skips them, so a link here
+                                      would land on the form with nothing
+                                      selected. */}
+                                  {session.type !== "rest" && (
+                                    <Link
+                                      href={logUrl}
+                                      className="shrink-0 mx-2 px-3 py-1.5 rounded-xl text-xs font-semibold bg-primary/20 text-primary hover:bg-primary/30 transition-colors"
+                                    >
+                                      Logga →
+                                    </Link>
+                                  )}
                                 </div>
 
                                 {isOpen && (
@@ -227,6 +235,16 @@ export default function AthleteProgramPage() {
                                         </div>
                                         {ex.variants && (
                                           <p className="text-xs text-slate-500 mt-1 italic">{ex.variants}</p>
+                                        )}
+                                        {ex.videoUrl && (
+                                          <a
+                                            href={ex.videoUrl}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="inline-flex items-center gap-1 text-xs text-primary mt-1"
+                                          >
+                                            ▶ Guarda il video
+                                          </a>
                                         )}
                                         {ex.notes && (
                                           <p className="text-xs text-slate-500 mt-1">{ex.notes}</p>

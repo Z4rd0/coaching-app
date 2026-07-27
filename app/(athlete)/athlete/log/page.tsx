@@ -10,14 +10,18 @@ import {
   createLog,
   getGroupsForAthlete,
   getActiveGroupProgram,
+  getAthleteProgram,
+  getGroupProgram,
 } from "@/lib/firestore";
-import type { Group, Cycle, Session, WorkoutLog, ExerciseLog, CardioLog, CircuitLog, HiitLog, Lap } from "@/types";
+import type { Group, Cycle, Session, WorkoutLog, ExerciseLog, CardioLog, CircuitLog, HiitLog, Lap, SegmentLog } from "@/types";
 import { MOOD_LABELS, ENERGY_LABELS, SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import HiitTimer from "@/components/HiitTimer";
 import CardioIntervals from "@/components/CardioIntervals";
 import SegmentView from "@/components/SegmentView";
 import { normalizeSession } from "@/lib/segments";
+import SegmentLogEditor, { initSegmentLogs, pruneSegmentLogs } from "@/components/SegmentLogEditor";
+import { todayISO } from "@/lib/dates";
 
 const inputCls = "w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-primary";
 const labelCls = "block text-xs text-slate-400 mb-1";
@@ -110,14 +114,18 @@ function AthleteLogPageInner() {
   const qWi = searchParams.get("wi");
   const qSi = searchParams.get("si");
   const qGroupId = searchParams.get("groupId");
+  /** Preferred over ci/wi/si: survives the coach reordering the program. */
+  const qSessionId = searchParams.get("sessionId");
 
   const [options, setOptions] = useState<SessionOption[]>([]);
   const [selectedKey, setSelectedKey] = useState<string>("");
   const [groups, setGroups] = useState<Group[]>([]);
-  const [logDate, setLogDate] = useState<string>(new Date().toISOString().slice(0, 10));
+  const [logDate, setLogDate] = useState<string>(todayISO());
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+  /** Set when a ?programId=…&ci&wi&si link could not be resolved to a session. */
+  const [preselectWarning, setPreselectWarning] = useState("");
 
   const [freeType, setFreeType] = useState<"strength" | "cardio">("strength");
   const [durationMin, setDurationMin] = useState(60);
@@ -135,6 +143,10 @@ function AthleteLogPageInner() {
   const [stravaActivities, setStravaActivities] = useState<StravaActivitySummary[] | null>(null);
   const [stravaLoading, setStravaLoading] = useState(false);
   const [stravaError, setStravaError] = useState("");
+  /** Strava returned 404 (not linked): prompt inline, never navigate away. */
+  const [stravaNotConnected, setStravaNotConnected] = useState(false);
+  /** Per-block actuals for hybrid sessions. */
+  const [segmentLogs, setSegmentLogs] = useState<SegmentLog[]>([]);
   const [laps, setLaps] = useState<Lap[]>([]);
   const [lapsLoading, setLapsLoading] = useState(false);
 
@@ -143,6 +155,8 @@ function AthleteLogPageInner() {
     const s = opts.find((o) => o.key === key)?.session ?? null;
     if (s && s.exercises.length > 0) setExerciseLogs(initExerciseLogs(s));
     else setExerciseLogs([]);
+    // Hybrids log per block; everything else keeps the flat exercise list.
+    setSegmentLogs(s && s.type === "hybrid" ? initSegmentLogs(normalizeSession(s)) : []);
     if (s) setDurationMin(s.durationMin);
   };
 
@@ -164,16 +178,51 @@ function AthleteLogPageInner() {
       for (const { g, p } of groupProgs) {
         if (p) opts.push(...optionsFromProgram(p.id, p.name, p.cycles, g.id, g.name));
       }
-      setOptions(opts);
 
-      // If arriving from the program page, pre-select that specific session
-      if (qProgramId && qCi !== null && qWi !== null && qSi !== null) {
-        const preselectKey = `${qGroupId ?? "p"}|${qProgramId}|${qCi}|${qWi}|${qSi}`;
-        if (opts.find((o) => o.key === preselectKey)) {
-          applySelection(preselectKey, opts);
+      // If arriving from the program page, pre-select that specific session.
+      // `sessionId` is authoritative when present; the positional key is the
+      // fallback for links made before sessions had ids (and for programs not
+      // yet touched by the id backfill).
+      const findKey = (opts: SessionOption[]): string | undefined =>
+        (qSessionId && opts.find((o) => o.session.id === qSessionId)?.key) ||
+        (qCi !== null && qWi !== null && qSi !== null
+          ? opts.find((o) => o.key === `${qGroupId ?? "p"}|${qProgramId}|${qCi}|${qWi}|${qSi}`)?.key
+          : undefined);
+
+      if (qProgramId && (qSessionId || (qCi !== null && qWi !== null && qSi !== null))) {
+
+        // The list above only holds the ACTIVE programs, but the program page
+        // links every program the athlete can see. When the target isn't there,
+        // fetch it and add its sessions rather than silently logging something
+        // else — "scegli quale sessione hai fatto" has to honour the choice.
+        if (!findKey(opts)) {
+          const extra = qGroupId
+            ? await getGroupProgram(coachId, qGroupId, qProgramId)
+            : await getAthleteProgram(coachId, athleteId, qProgramId);
+          if (extra) {
+            const groupName = qGroupId ? grps.find((g) => g.id === qGroupId)?.name : undefined;
+            opts.push(
+              ...optionsFromProgram(extra.id, extra.name, extra.cycles, qGroupId ?? undefined, groupName)
+            );
+          }
+        }
+
+        setOptions(opts);
+        const key = findKey(opts);
+        if (key) {
+          applySelection(key, opts);
           return;
         }
+        // Still nothing: the program was deleted, or the coach reordered the
+        // sessions under the athlete's feet (the link carries positional
+        // indices). Say so instead of quietly selecting another session.
+        setPreselectWarning(
+          "Non ho trovato la sessione che hai scelto — il programma potrebbe essere stato modificato dal coach. Selezionala qui sotto."
+        );
+        return;
       }
+
+      setOptions(opts);
 
       // Otherwise pre-select today's planned session as a convenience
       let suggested: Session | null = prog ? getTodaySession(prog) : null;
@@ -218,13 +267,17 @@ function AthleteLogPageInner() {
       });
       const data = await res.json();
       if (!res.ok) {
+        // 404 = Strava not connected. This used to navigate away to the
+        // dashboard, throwing away everything already typed into the form for
+        // what is an optional convenience feature. Prompt in place instead.
         if (res.status === 404) {
-          window.location.href = "/athlete/dashboard";
+          setStravaNotConnected(true);
         } else {
           setStravaError(data.error ?? "Errore Strava");
         }
         return;
       }
+      setStravaNotConnected(false);
       setStravaActivities(data.activities);
     } catch {
       setStravaError("Errore di rete");
@@ -309,16 +362,26 @@ function AthleteLogPageInner() {
         ...(selectedOption ? { programId: selectedOption.programId } : {}),
         ...(selectedOption?.groupId ? { groupId: selectedOption.groupId } : {}),
         ...(selectedSession ? { plannedSession: selectedSession } : {}),
+        ...(selectedSession?.id
+          ? { sessionRef: { sessionId: selectedSession.id, dayOfWeek: selectedSession.dayOfWeek } }
+          : {}),
         actualDurationMin: durationMin,
         perceivedRPE: rpe,
         mood,
         energyLevel: energy,
         notes,
         writtenBy: "athlete",
+        // Recorded even for free sessions, which have no plannedSession — see
+        // WorkoutLog.sessionType.
+        sessionType: selectedSession?.type ?? freeType,
         ...(hasExerciseLogs ? { exerciseLogs } : {}),
         ...(finalCardio ? { cardioLog: finalCardio } : {}),
         ...(finalCircuit ? { circuitLog: finalCircuit } : {}),
         ...(finalHiit ? { hiitLog: finalHiit } : {}),
+        ...(() => {
+          const kept = pruneSegmentLogs(segmentLogs);
+          return kept.length > 0 ? { segmentLogs: kept } : {};
+        })(),
         ...(laps.length > 0 ? { laps } : {}),
       };
 
@@ -362,6 +425,15 @@ function AthleteLogPageInner() {
 
       <form onSubmit={handleSubmit} className="space-y-5">
 
+        {/* A "Logga →" link that couldn't be resolved. Never fall through to
+            another session without saying so — the athlete would log the wrong
+            workout believing the app followed their choice. */}
+        {preselectWarning && (
+          <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-4 py-3 text-xs text-amber-300">
+            {preselectWarning}
+          </div>
+        )}
+
         {/* ── Session picker (day-independent) ── */}
         {options.length > 0 && (
           <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700">
@@ -397,7 +469,7 @@ function AthleteLogPageInner() {
           <input
             type="date"
             value={logDate}
-            max={new Date().toISOString().slice(0, 10)}
+            max={todayISO()}
             onChange={(e) => setLogDate(e.target.value)}
             className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2.5 text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary"
           />
@@ -405,11 +477,20 @@ function AthleteLogPageInner() {
 
         {/* Hybrid: show the composable plan as reference (core metrics logged below) */}
         {sessionType === "hybrid" && selectedSession && (
-          <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-2">
-            <p className={labelCls}>Programma (blocchi)</p>
-            <SegmentView segments={normalizeSession(selectedSession)} />
-            <p className="text-[11px] text-slate-500">Registra durata, RPE e note qui sotto.</p>
-          </div>
+          <>
+            <div className="bg-slate-800 rounded-2xl p-4 border border-slate-700 space-y-2">
+              <p className={labelCls}>Programma (blocchi)</p>
+              <SegmentView segments={normalizeSession(selectedSession)} />
+            </div>
+            <div className="space-y-2">
+              <p className={labelCls}>Com&apos;è andato ogni blocco</p>
+              <SegmentLogEditor
+                segments={normalizeSession(selectedSession)}
+                value={segmentLogs}
+                onChange={setSegmentLogs}
+              />
+            </div>
+          </>
         )}
 
         {!selectedSession && (
@@ -618,6 +699,20 @@ function AthleteLogPageInner() {
               </label>
               </div>
             </div>
+            {stravaNotConnected && (
+              <div className="bg-amber-500/10 border border-amber-500/30 rounded-xl px-3 py-2.5 text-xs text-amber-300">
+                Strava non è collegato.{" "}
+                <a
+                  href="/athlete/dashboard"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline font-medium"
+                >
+                  Collegalo dalla dashboard
+                </a>{" "}
+                — si apre in una nuova scheda, così non perdi quello che hai già scritto qui.
+              </div>
+            )}
             {stravaError && (
               <p className="text-xs text-red-400">{stravaError}</p>
             )}

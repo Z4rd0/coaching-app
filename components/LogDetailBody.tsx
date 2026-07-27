@@ -37,6 +37,39 @@ export default function LogDetailBody({
         <Stat label="Energia" value={ENERGY_LABELS[log.energyLevel]} />
       </div>
 
+      {/* D6 — assegnato vs eseguito, con la percentuale.
+          Il piano è già salvato dentro il log: senza il confronto esplicito il
+          coach deve tenere a mente i valori previsti mentre legge quelli fatti. */}
+      {log.plannedSession && (
+        <section className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
+          <div className="grid grid-cols-4 px-4 py-2 border-b border-slate-700 text-[10px] uppercase tracking-wide text-slate-500">
+            <span className="col-span-1"> </span>
+            <span className="text-right">Assegnato</span>
+            <span className="text-right">Eseguito</span>
+            <span className="text-right">%</span>
+          </div>
+          {([
+            ["Durata", log.plannedSession.durationMin, log.actualDurationMin, "m"],
+            ["RPE", log.plannedSession.targetRPE, log.perceivedRPE, ""],
+          ] as [string, number, number, string][]).map(([label, planned, actual, unit]) => {
+            const pct = planned > 0 ? Math.round((actual / planned) * 100) : null;
+            // Green inside ±10% of plan, amber outside — the direction of the
+            // miss is readable from the two columns themselves.
+            const color = pct === null ? "#94A3B8" : Math.abs(pct - 100) <= 10 ? "#22C55E" : "#F59E0B";
+            return (
+              <div key={label} className="grid grid-cols-4 px-4 py-2 text-sm border-b border-slate-700/50 last:border-0">
+                <span className="text-slate-400">{label}</span>
+                <span className="text-right text-slate-300 tabular-nums">{planned || "—"}{unit}</span>
+                <span className="text-right text-white tabular-nums">{actual || "—"}{unit}</span>
+                <span className="text-right font-semibold tabular-nums" style={{ color }}>
+                  {pct === null ? "—" : `${pct}%`}
+                </span>
+              </div>
+            );
+          })}
+        </section>
+      )}
+
       {/* Coach comment */}
       {!hideCoachComment && log.coachComment && (
         <div className="bg-primary/10 border border-primary/30 rounded-2xl px-4 py-3">
@@ -46,11 +79,64 @@ export default function LogDetailBody({
       )}
 
       {/* Hybrid plan (composable blocks) — shown for hybrid sessions whose
-          per-block actuals aren't captured yet; gives the workout context. */}
-      {log.plannedSession?.segments && log.plannedSession.segments.length > 0 && (
+          per-block actuals aren't captured yet; gives the workout context.
+          The guard is normalizeSession().length > 1, matching every other read
+          view: since the dual-write, serializeSessionForWrite synthesizes
+          `segments` for EVERY session, so testing the raw array made single-
+          paradigm logs render their plan as blocks AND again under "Esercizi". */}
+      {log.plannedSession && normalizeSession(log.plannedSession).length > 1 && (
         <section className="space-y-2">
           <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Programma (blocchi)</p>
           <SegmentView segments={normalizeSession(log.plannedSession)} />
+        </section>
+      )}
+
+      {/* Per-block actuals (hybrid sessions). Rendered right after the plan so
+          the two read as plan → done, block by block. */}
+      {log.segmentLogs && log.segmentLogs.length > 0 && (
+        <section className="space-y-2">
+          <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Blocchi svolti</p>
+          {log.segmentLogs.map((sl, i) => {
+            const planned = log.plannedSession
+              ? normalizeSession(log.plannedSession).find((seg) => seg.id === sl.segmentId)
+              : undefined;
+            return (
+              <div key={sl.segmentId || i} className="bg-slate-800 rounded-2xl border border-slate-700 p-4 space-y-2">
+                <p className="text-sm font-semibold text-white">
+                  {planned?.title || `Blocco ${i + 1}`}
+                </p>
+
+                {sl.exerciseLogs && sl.exerciseLogs.length > 0 && (
+                  <div className="space-y-1">
+                    {sl.exerciseLogs.map((ex, k) => (
+                      <p key={k} className="text-xs text-slate-300">
+                        <span className="text-white">{ex.name}</span>{" "}
+                        {ex.actualSets ?? "—"}×{ex.actualReps ?? "—"}
+                        {ex.actualLoad ? ` @ ${ex.actualLoad}` : ""}
+                      </p>
+                    ))}
+                  </div>
+                )}
+
+                {sl.cardioLog && (
+                  <p className="text-xs text-slate-300">
+                    {sl.cardioLog.distanceMeters != null && `${(sl.cardioLog.distanceMeters / 1000).toFixed(2)} km`}
+                    {sl.cardioLog.avgPaceMinPerKm ? ` · ${sl.cardioLog.avgPaceMinPerKm}/km` : ""}
+                    {sl.cardioLog.avgHeartRate != null ? ` · FC ${sl.cardioLog.avgHeartRate}` : ""}
+                  </p>
+                )}
+
+                {sl.conditioningLog && (
+                  <p className="text-xs text-slate-300">
+                    {sl.conditioningLog.roundsCompleted} round
+                    {sl.conditioningLog.avgHeartRate != null ? ` · FC ${sl.conditioningLog.avgHeartRate}` : ""}
+                  </p>
+                )}
+
+                {sl.notes && <p className="text-xs text-slate-400 italic">{sl.notes}</p>}
+              </div>
+            );
+          })}
         </section>
       )}
 

@@ -91,9 +91,14 @@ export default function AthleteLogDetailPage() {
             {log.plannedSession && (
               <span className="text-xs text-slate-400">{SESSION_TYPE_LABELS[log.plannedSession.type]}</span>
             )}
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">
-              {log.writtenBy === "athlete" ? "Loggato dall’atleta" : "Loggato dal coach"}
-            </span>
+            {/* Only claim an author when the log actually records one. Logs
+                written before `writtenBy` existed have no field, and treating
+                that as "coach" mislabels the athlete's own logs. */}
+            {log.writtenBy && (
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700 text-slate-300">
+                {log.writtenBy === "athlete" ? "Loggato dall’atleta" : "Loggato dal coach"}
+              </span>
+            )}
           </div>
         </div>
         <button

@@ -69,6 +69,9 @@ export interface Exercise {
   restSeconds?: number;
   variants?: string;    // e.g. "Se non hai bilanciere usa manubri"
   notes: string;
+  /** Demo video (YouTube/Vimeo/any URL). A written cue can't show a movement;
+   *  this is the cheapest way to remove "am I doing it right?". */
+  videoUrl?: string;
 }
 
 // ─── HIIT ─────────────────────────────────────────────────────────────────────
@@ -211,6 +214,14 @@ export type Segment =
 export type SegmentKind = Segment["kind"];
 
 export interface Session {
+  /** Stable identity, assigned on write (see serializeSessionForWrite).
+   *
+   *  Everything that carries a session between pages used to address it
+   *  positionally (`?ci=&wi=&si=`) or by date, both of which break the moment
+   *  the coach reorders or reschedules anything. Optional because it is
+   *  assigned on the next write of each program; readers must tolerate its
+   *  absence and fall back to position. */
+  id?: string;
   dayOfWeek: number; // 0 = Monday … 6 = Sunday
   /** Optional ISO date "YYYY-MM-DD" — when set, overrides dayOfWeek
    *  for scheduling. Lets the coach pin a session to a precise calendar day. */
@@ -391,9 +402,15 @@ export interface WorkoutLog {
   programId?: string;
   /** Set when the logged session belongs to a group program */
   groupId?: string;
+  /** Link back to the planned session this log came from.
+   *
+   *  `plannedSession` stores a full COPY of the session, which is what history
+   *  renders, but a copy can't be traced back to the plan after the coach edits
+   *  it. The id survives edits and reordering, so it is the reliable key for
+   *  "which planned workout was this?" (and the anchor per-block actuals will
+   *  need). Absent on logs written before sessions had ids. */
   sessionRef?: {
-    cycleNumber: number;
-    weekNumber: number;
+    sessionId: string;
     dayOfWeek: number;
   };
   plannedSession?: Session;
@@ -416,6 +433,14 @@ export interface WorkoutLog {
   /** Legacy: old logs may carry an AI analysis from the removed feature */
   aiAnalysis?: AIAnalysis;
   writtenBy?: "coach" | "athlete";
+  /** What kind of workout this was, recorded at save time.
+   *
+   *  `plannedSession.type` only exists when the log came from a planned session,
+   *  so free sessions used to have no type at all: they never matched a history
+   *  filter, and the group feed had to guess one from which sub-log happened to
+   *  be present. Optional because logs written before this field exists don't
+   *  have it — read it as `sessionType ?? plannedSession?.type`. */
+  sessionType?: SessionType;
   createdAt: Timestamp;
 }
 

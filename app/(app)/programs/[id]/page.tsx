@@ -13,19 +13,9 @@ import LoadingSpinner from "@/components/LoadingSpinner";
 import CardioIntervals from "@/components/CardioIntervals";
 import SegmentView from "@/components/SegmentView";
 import { normalizeSession } from "@/lib/segments";
+import { sessionMeta } from "@/lib/sessionMeta";
 
 const DAYS_SHORT = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
-
-const TYPE_COLOR: Record<Session["type"], string> = {
-  strength: "bg-primary/20 text-primary-300",
-  cardio:   "bg-blue-500/20 text-blue-300",
-  mobility: "bg-purple-500/20 text-purple-300",
-  rest:     "bg-slate-600/40 text-slate-400",
-  other:    "bg-slate-600/40 text-slate-300",
-  circuit:  "bg-yellow-400/20 text-yellow-300",
-  hiit:     "bg-rose-500/20 text-rose-300",
-  hybrid:   "bg-emerald-500/20 text-emerald-300",
-};
 
 // ─── Date helper ─────────────────────────────────────────────────────────────
 // Returns formatted date string if program.startDate is set, else null.
@@ -262,9 +252,19 @@ export default function ProgramDetailPage() {
                                 })()}
                               </span>
                             )}
-                            <span className="text-[10px] text-slate-600">
-                              {week.sessions.length} sessioni
-                            </span>
+                            {/* D3 — a coach plans in weeks, so the week header
+                                carries its own totals: sessions, minutes and the
+                                planned sRPE load (RPE × minuti). */}
+                            {(() => {
+                              const real = week.sessions.filter((s) => s.type !== "rest");
+                              const minutes = real.reduce((a, s) => a + (s.durationMin || 0), 0);
+                              const load = real.reduce((a, s) => a + (s.targetRPE || 0) * (s.durationMin || 0), 0);
+                              return (
+                                <span className="text-[10px] text-slate-600">
+                                  {real.length} sess · {minutes}′{load > 0 ? ` · carico ${load}` : ""}
+                                </span>
+                              );
+                            })()}
                           </div>
                           <span className="text-slate-500">
                             <Chevron open={weekOpen} />
@@ -312,7 +312,7 @@ export default function ProgramDetailPage() {
                                       {/* Type badge + title */}
                                       <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-1.5 mb-0.5">
-                                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${TYPE_COLOR[session.type]}`}>
+                                          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full ${sessionMeta(session.type).badge}`}>
                                             {SESSION_TYPE_LABELS[session.type]}
                                           </span>
                                           <span className="text-[10px] text-slate-500">

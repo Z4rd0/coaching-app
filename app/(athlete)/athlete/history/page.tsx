@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useAuth } from "@/contexts/AuthContext";
 import { getLogs } from "@/lib/firestore";
+import { exerciseRecords, recordsSetBy, type RecordWindow } from "@/lib/records";
 import type { WorkoutLog, Lap } from "@/types";
 import { MOOD_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
@@ -204,6 +205,7 @@ function ProgressionCard({ series }: { series: ProgressionSeries }) {
 export default function AthleteHistoryPage() {
   const { user, athleteAccess } = useAuth();
   const [logs, setLogs] = useState<WorkoutLog[]>([]);
+  const [recordWindow, setRecordWindow] = useState<RecordWindow>("all");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -216,9 +218,59 @@ export default function AthleteHistoryPage() {
 
   const progression = buildProgression(logs);
 
+  // A3/D8 — personal records. Windows let the athlete see recent form ("best
+  // of the last 3 months") separately from an all-time mark they may be far from.
+  const records = exerciseRecords(logs, recordWindow);
+  // Which logs set a record, so the list can badge them.
+  const recordLogIds = new Set(
+    logs.filter((l) => recordsSetBy(l, logs).length > 0).map((l) => l.id)
+  );
+
   return (
     <div className="px-4 pt-6 pb-8 space-y-6">
       <h1 className="text-xl font-bold text-white">Storico allenamenti</h1>
+
+      {/* Record personali */}
+      {records.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-3">
+            <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider">
+              🏅 Record personali
+            </p>
+            <div className="flex gap-1">
+              {([["3m", "3 mesi"], ["1y", "Anno"], ["all", "Sempre"]] as const).map(([w, label]) => (
+                <button
+                  key={w}
+                  type="button"
+                  onClick={() => setRecordWindow(w)}
+                  className={`px-2 py-0.5 rounded-lg text-[10px] font-medium transition-colors ${
+                    recordWindow === w ? "bg-primary text-white" : "text-slate-400 border border-slate-700"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="bg-slate-800 rounded-2xl border border-slate-700 overflow-hidden">
+            {records.slice(0, 8).map((r, i) => (
+              <div
+                key={r.exercise}
+                className="flex items-center gap-3 px-4 py-2.5 border-b border-slate-700/50 last:border-0"
+              >
+                <span className="text-sm w-5 text-center">
+                  {i === 0 ? "🥇" : i === 1 ? "🥈" : i === 2 ? "🥉" : ""}
+                </span>
+                <span className="flex-1 text-sm text-white truncate">{r.exercise}</span>
+                <span className="text-sm font-bold text-white tabular-nums">
+                  {r.loadKg} kg
+                  {r.reps ? <span className="text-xs font-normal text-slate-400"> × {r.reps}</span> : null}
+                </span>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       {/* Progressione ripetute */}
       {progression.length > 0 && (
@@ -264,6 +316,11 @@ export default function AthleteHistoryPage() {
                       )}
                     </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      {recordLogIds.has(log.id) && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-400/15 text-yellow-300 font-semibold">
+                          🥇 record
+                        </span>
+                      )}
                       {log.laps && log.laps.length > 0 && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium">
                           {log.laps.length} lap

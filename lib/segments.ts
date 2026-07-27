@@ -30,6 +30,14 @@ type ConditioningStructure = ConditioningSegment["structure"];
 // its stable id. (Authored multi-segment sessions bring their own ids.)
 const SEG_ID = "seg-0";
 
+/** Stable id for a session. crypto.randomUUID exists in modern browsers and in
+ *  Node 19+; the fallback keeps the backfill script and older runtimes working. */
+export function newSessionId(): string {
+  const c = globalThis.crypto;
+  if (c && typeof c.randomUUID === "function") return c.randomUUID();
+  return `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 const HIIT_STRUCTURES = new Set<HiitFormat>([
   "interval",
   "tabata",
@@ -280,17 +288,23 @@ export function denormalizeSegments(segments: Segment[]): LegacySessionFields {
  * Pure: no I/O, no mutation.
  */
 export function serializeSessionForWrite(session: Session): Session {
+  // Assign the stable id here, on the single write path every program goes
+  // through, so ids appear without a separate migration step and an existing
+  // one is never regenerated (that would break links and log references).
+  const id = session.id ?? newSessionId();
+
   if (session.type === "hybrid" && session.segments?.length) {
     return {
       ...session,
       ...denormalizeSegments(session.segments),
+      id,
       type: "hybrid",
       segments: session.segments,
     };
   }
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { segments: _stale, ...legacy } = session;
-  return { ...legacy, segments: synthesizeSegments(session) } as Session;
+  return { ...legacy, id, segments: synthesizeSegments(session) } as Session;
 }
 
 /**

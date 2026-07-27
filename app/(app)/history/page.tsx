@@ -13,19 +13,19 @@ const RPEChart = dynamic(() => import("@/components/RPEChart"), {
 
 import { useAuth } from "@/contexts/AuthContext";
 import { getLogs, getPrograms } from "@/lib/firestore";
-import type { WorkoutLog, Program } from "@/types";
-import { MOOD_LABELS } from "@/types";
+import type { WorkoutLog, Program, SessionType } from "@/types";
+import { MOOD_LABELS, SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 
-type FilterType = "all" | "strength" | "cardio" | "mobility" | "other";
+/** Filter chips are derived from the real session types, so a type added to the
+ *  model can't silently become unfilterable — circuit, hiit and hybrid logs used
+ *  to be reachable only via "Tutti". `rest` is excluded: nobody logs a rest day. */
+const FILTER_TYPES = (Object.keys(SESSION_TYPE_LABELS) as SessionType[]).filter(
+  (t) => t !== "rest"
+);
+type FilterType = "all" | SessionType;
 
-const FILTER_LABELS: Record<FilterType, string> = {
-  all:      "Tutti",
-  strength: "Forza",
-  cardio:   "Cardio",
-  mobility: "Mobilità",
-  other:    "Altro",
-};
+const filterLabel = (f: FilterType) => (f === "all" ? "Tutti" : SESSION_TYPE_LABELS[f]);
 
 const RPE_COLOR = (rpe: number) => {
   if (rpe <= 3) return "#22C55E";
@@ -56,7 +56,12 @@ export default function HistoryPage() {
     });
   }, [user]);
 
-  const filtered = filter === "all" ? logs : logs.filter((l) => l.plannedSession?.type === filter);
+  // sessionType is the recorded value (free sessions included); plannedSession
+  // is the fallback for logs written before that field existed.
+  const filtered =
+    filter === "all"
+      ? logs
+      : logs.filter((l) => (l.sessionType ?? l.plannedSession?.type) === filter);
 
   const chartData = [...logs]
     .slice(0, 14)
@@ -130,7 +135,7 @@ export default function HistoryPage() {
 
           {/* Filter chips */}
           <div className="flex gap-2 overflow-x-auto pb-1 -mx-1 px-1">
-            {(["all", "strength", "cardio", "mobility", "other"] as FilterType[]).map((f) => (
+            {(["all", ...FILTER_TYPES] as FilterType[]).map((f) => (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
@@ -141,7 +146,7 @@ export default function HistoryPage() {
                     : { background: "var(--bg-surface-2)", border: "1px solid var(--border-default)", color: "var(--text-muted)" }
                 }
               >
-                {FILTER_LABELS[f]}
+                {filterLabel(f)}
               </button>
             ))}
           </div>
