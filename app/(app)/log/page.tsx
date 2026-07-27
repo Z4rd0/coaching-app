@@ -1,16 +1,20 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Timestamp } from "firebase/firestore";
 import { useAuth } from "@/contexts/AuthContext";
-import { getActiveProgram, getTodaySession, createLog } from "@/lib/firestore";
+import { getActiveProgram, getSessionsForDate, createLog } from "@/lib/firestore";
 import type { Program, Session, WorkoutLog, ExerciseLog, CardioLog, CircuitLog, HiitLog } from "@/types";
 import { MOOD_LABELS, ENERGY_LABELS, SESSION_TYPE_LABELS } from "@/types";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import HiitTimer from "@/components/HiitTimer";
 import SegmentView from "@/components/SegmentView";
 import { normalizeSession } from "@/lib/segments";
+import SegmentLogEditor, { initSegmentLogs, pruneSegmentLogs } from "@/components/SegmentLogEditor";
+import type { SegmentLog } from "@/types";
+import { todayISO } from "@/lib/dates";
+import { sessionMeta } from "@/lib/sessionMeta";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -55,20 +59,26 @@ const emptyCardioLog = (): CardioLog => ({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function LogPage() {
+function LogPageInner() {
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
 
   const [program, setProgram] = useState<Program | null>(null);
   const [todaySession, setTodaySession] = useState<Session | null>(null);
+  /** Every session planned on the chosen day. More than one is a supported
+   *  case (that's what "Sposta giorno" produces), so the page must let the
+   *  coach say WHICH one they did instead of always taking the first. */
+  const [daySessions, setDaySessions] = useState<Session[]>([]);
   const [logDate, setLogDate] = useState<string>(
-    searchParams.get("date") ?? new Date().toISOString().slice(0, 10)
+    searchParams.get("date") ?? todayISO()
   );
   // When set (ISO "YYYY-MM-DD"), locks which planned session we're logging,
   // decoupled from the actual log date — lets you log an upcoming session on a
   // different day. Without it, the session follows the chosen date (default flow).
   const plannedDate = searchParams.get("session");
+  /** Which of the day's sessions to pre-select (set by the calendar sheet). */
+  const qIdx = searchParams.get("idx");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -97,8 +107,21 @@ export default function LogPage() {
   const [hiitLog, setHiitLog] = useState<HiitLog>({ roundsCompleted: 0 });
   const [showHiitTimer, setShowHiitTimer] = useState(false);
 
+  // Per-block actuals for hybrid sessions
+  const [segmentLogs, setSegmentLogs] = useState<SegmentLog[]>([]);
+
   // Rest timer
   const [activeTimer, setActiveTimer] = useState<{ label: string; remaining: number; total: number } | null>(null);
+
+  /** Point the whole form at one planned session (or none = free session). */
+  const selectSession = (s: Session | null) => {
+    setTodaySession(s);
+    if (s && s.exercises.length > 0) setExerciseLogs(initExerciseLogs(s));
+    else setExerciseLogs([]);
+    // Hybrids log per block; everything else keeps the flat exercise list.
+    setSegmentLogs(s && s.type === "hybrid" ? initSegmentLogs(normalizeSession(s)) : []);
+    if (s) setDurationMin(s.durationMin);
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -106,11 +129,11 @@ export default function LogPage() {
       setProgram(prog);
       if (prog) {
         // A planned session (from "Prossimi giorni") wins; otherwise the
-        // session is the one falling on the chosen log date.
-        const s = getTodaySession(prog, new Date((plannedDate ?? logDate) + "T12:00:00"));
-        setTodaySession(s);
-        if (s && s.exercises.length > 0) setExerciseLogs(initExerciseLogs(s));
-        if (s) setDurationMin(s.durationMin);
+        // sessions are the ones falling on the chosen log date.
+        const list = getSessionsForDate(prog, new Date((plannedDate ?? logDate) + "T12:00:00"));
+        setDaySessions(list);
+        const i = qIdx !== null && Number.isInteger(+qIdx) ? +qIdx : 0;
+        selectSession(list[i] ?? list[0] ?? null);
       }
       setLoading(false);
     });
@@ -121,11 +144,9 @@ export default function LogPage() {
     // When logging a specific planned session, the session is locked — changing
     // the actual log date must not swap it out.
     if (!program || plannedDate) return;
-    const s = getTodaySession(program, new Date(logDate + "T12:00:00"));
-    setTodaySession(s);
-    if (s && s.exercises.length > 0) setExerciseLogs(initExerciseLogs(s));
-    else setExerciseLogs([]);
-    if (s) setDurationMin(s.durationMin);
+    const list = getSessionsForDate(program, new Date(logDate + "T12:00:00"));
+    setDaySessions(list);
+    selectSession(list[0] ?? null);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [logDate]);
 
@@ -193,15 +214,31 @@ export default function LogPage() {
         date: Timestamp.fromDate(new Date(logDate + "T12:00:00")),
         ...(program?.id ? { programId: program.id } : {}),
         ...(todaySession ? { plannedSession: todaySession } : {}),
+        ...(todaySession?.id
+          ? { sessionRef: { sessionId: todaySession.id, dayOfWeek: todaySession.dayOfWeek } }
+          : {}),
         actualDurationMin: durationMin,
         perceivedRPE: rpe,
         mood,
         energyLevel: energy,
         notes,
+        // Always recorded: the athlete page writes "athlete", so without this
+        // the coach's own logs had no field at all and the "Loggato dal coach"
+        // badge was really testing "field missing", which legacy logs also are.
+        writtenBy: "coach",
+        // Recorded even for free sessions, which have no plannedSession — see
+        // WorkoutLog.sessionType.
+        sessionType: todaySession?.type ?? freeType,
         ...(hasExerciseLogs ? { exerciseLogs } : {}),
         ...(finalCardio ? { cardioLog: finalCardio } : {}),
         ...(finalCircuit ? { circuitLog: finalCircuit } : {}),
         ...(finalHiit ? { hiitLog: finalHiit } : {}),
+        ...(segmentLogs.length > 0
+          ? (() => {
+              const kept = pruneSegmentLogs(segmentLogs);
+              return kept.length > 0 ? { segmentLogs: kept } : {};
+            })()
+          : {}),
       };
 
       const docRef = await createLog(user.uid, user.uid, logData);
@@ -240,7 +277,7 @@ export default function LogPage() {
           <input
             type="date"
             value={logDate}
-            max={new Date().toISOString().slice(0, 10)}
+            max={todayISO()}
             onChange={(e) => setLogDate(e.target.value)}
             className={inputCls}
           />
@@ -251,13 +288,52 @@ export default function LogPage() {
           )}
         </div>
 
+        {/* ── Which planned session? (only when the day has more than one) ── */}
+        {daySessions.length > 1 && (
+          <div className="card p-4">
+            <label className={labelCls}>Quale sessione hai fatto?</label>
+            <div className="flex flex-col gap-2">
+              {daySessions.map((s, i) => {
+                const active = s === todaySession;
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => selectSession(s)}
+                    className="text-left rounded-lg px-3 py-2.5 text-[13px] transition-colors"
+                    style={{
+                      background: active ? sessionMeta(s.type).tint : "var(--bg-surface-2)",
+                      border: `1px solid ${active ? sessionMeta(s.type).color : "rgba(148,163,184,0.08)"}`,
+                      color: "var(--text-primary)",
+                    }}
+                  >
+                    <span className="font-medium">{s.title || SESSION_TYPE_LABELS[s.type]}</span>
+                    <span style={{ color: "var(--text-muted)" }}>
+                      {" · "}{SESSION_TYPE_LABELS[s.type]}{" · "}{s.durationMin} min
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Hybrid: show the composable plan as reference (core metrics logged below) */}
         {sessionType === "hybrid" && todaySession && (
-          <div className="card p-4 space-y-2">
-            <p className={labelCls}>Programma (blocchi)</p>
-            <SegmentView segments={normalizeSession(todaySession)} />
-            <p className="text-[11px]" style={{ color: "var(--text-faint)" }}>Registra durata, RPE e note qui sotto.</p>
-          </div>
+          <>
+            <div className="card p-4 space-y-2">
+              <p className={labelCls}>Programma (blocchi)</p>
+              <SegmentView segments={normalizeSession(todaySession)} />
+            </div>
+            <div className="space-y-2">
+              <p className={labelCls}>Com&apos;è andato ogni blocco</p>
+              <SegmentLogEditor
+                segments={normalizeSession(todaySession)}
+                value={segmentLogs}
+                onChange={setSegmentLogs}
+              />
+            </div>
+          </>
         )}
 
         {/* ── Free session type toggle ── */}
@@ -715,5 +791,16 @@ export default function LogPage() {
         </div>
       )}
     </div>
+  );
+}
+
+// useSearchParams needs a Suspense boundary to avoid opting the whole route into
+// client-side rendering — the athlete log page already does this; without it the
+// two pages behave differently in prerender.
+export default function LogPage() {
+  return (
+    <Suspense fallback={<LoadingSpinner className="min-h-screen" />}>
+      <LogPageInner />
+    </Suspense>
   );
 }

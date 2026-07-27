@@ -48,7 +48,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ success: true, shared: 0 });
     }
 
+    // Recorded on the log since M5. The plannedSession fallback and the
+    // sub-log heuristic below only serve logs written before that.
     const sessionType =
+      log.sessionType ??
       log.plannedSession?.type ??
       (log.circuitLog ? "circuit" : log.cardioLog ? "cardio" : "strength");
     const durationMin = typeof log.actualDurationMin === "number" ? log.actualDurationMin : 0;
