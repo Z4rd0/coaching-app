@@ -105,6 +105,12 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // OAuth tokens are server-only (Admin SDK bypasses rules). Never readable
+    // by the athlete OR the coach — see AUDIT ALTO-1.
+    match /athleteTredictTokens/{uid} {
+      allow read, write: if false;
+    }
+
     // ── AthleteAccess lookup ───────────────────────────────────────────────────
     match /athleteAccess/{uid} {
       // Owner can read their own access doc
