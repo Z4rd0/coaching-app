@@ -3,49 +3,18 @@
  * Uses HMAC-signed state tokens so the callback can identify the user
  * without storing anything in the database before the OAuth completes.
  */
-import crypto from "crypto";
+import { signState, verifyState } from "./oauth-state";
 
 // ─── State signing ────────────────────────────────────────────────────────────
+// Shared implementation in lib/oauth-state.ts; these keep the call sites and
+// the per-provider secret unchanged.
 
 export function signStravaState(uid: string): string {
-  const ts = Date.now().toString();
-  const payload = `${uid}|${ts}`;
-  const sig = crypto
-    .createHmac("sha256", process.env.STRAVA_STATE_SECRET!)
-    .update(payload)
-    .digest("hex");
-  return Buffer.from(`${payload}|${sig}`).toString("base64url");
+  return signState(uid, process.env.STRAVA_STATE_SECRET!);
 }
 
 export function verifyStravaState(state: string): string | null {
-  try {
-    const decoded = Buffer.from(state, "base64url").toString();
-    // Format: uid|timestamp|hex-signature
-    const lastBar = decoded.lastIndexOf("|");
-    const secondLastBar = decoded.lastIndexOf("|", lastBar - 1);
-    if (lastBar < 0 || secondLastBar < 0) return null;
-
-    const sig = decoded.slice(lastBar + 1);
-    const payload = decoded.slice(0, lastBar);
-    const ts = parseInt(decoded.slice(secondLastBar + 1, lastBar), 10);
-    const uid = decoded.slice(0, secondLastBar);
-
-    if (!uid || isNaN(ts) || Date.now() - ts > 3_600_000) return null;
-
-    const expected = crypto
-      .createHmac("sha256", process.env.STRAVA_STATE_SECRET!)
-      .update(payload)
-      .digest("hex");
-
-    const sigBuf = Buffer.from(sig.padEnd(expected.length, "0"), "hex");
-    const expBuf = Buffer.from(expected, "hex");
-    if (sigBuf.length !== expBuf.length) return null;
-    if (!crypto.timingSafeEqual(sigBuf, expBuf)) return null;
-
-    return uid;
-  } catch {
-    return null;
-  }
+  return verifyState(state, process.env.STRAVA_STATE_SECRET!);
 }
 
 // ─── OAuth URLs ───────────────────────────────────────────────────────────────
