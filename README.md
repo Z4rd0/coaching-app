@@ -1,36 +1,47 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Coaching App
 
-## Getting Started
+PWA per un personal trainer che segue uno o più atleti: il coach scrive programmi
+(forza, cardio a ripetute, circuit, HIIT, ibridi), li assegna a singoli atleti o a gruppi,
+l'atleta registra le sedute e il coach le rivede, con carico, alert e record calcolati.
 
-First, run the development server:
+Stack: Next.js 14 (App Router) · React 18 · Firebase Auth + Firestore · Tailwind ·
+recharts · Resend (inviti email) · Anthropic SDK (import AI dei programmi) · Vitest.
+
+Server MCP collegato (creare e assegnare programmi parlando con Claude): repo `coaching-mcp`.
+
+## Avvio
 
 ```bash
+npm install
+cp .env.local.example .env.local   # poi compila i valori
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| Comando | Cosa fa |
+|---|---|
+| `npm run dev` | server di sviluppo |
+| `npm run build` | build di produzione |
+| `npm test` | test Vitest sulle funzioni pure (`lib/`) |
+| `npx tsc --noEmit` | type-check |
+| `npm run lint` | ESLint |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+La CI (`.github/workflows/ci.yml`) esegue type-check, lint, test e build a ogni push e PR.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Variabili d'ambiente
 
-## Learn More
+Vedi `.env.local.example`. Servono almeno le `NEXT_PUBLIC_FIREBASE_*` e le credenziali
+Firebase Admin per le route `app/api/*`. Le integrazioni sono opzionali e spente finché le
+variabili sono vuote: Strava (`STRAVA_*`), Tredict (`TREDICT_*`), email (`RESEND_*`),
+import AI (`ANTHROPIC_API_KEY`, modello opzionale con `IMPORT_MODEL`).
 
-To learn more about Next.js, take a look at the following resources:
+## Struttura
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+- `app/(app)/` area coach · `app/(athlete)/athlete/` area atleta · `app/api/` route server
+- `lib/` logica pura e testata (carico, alert, record, scheduling, segmenti) e accesso Firestore
+- `firestore.rules` regole di sicurezza: i token OAuth stanno in collection chiuse a client
+- `scripts/` migrazioni e backfill una tantum
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Documenti di progetto (nella root del monorepo)
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`ROADMAP.md` (cosa fare e in che ordine) · `AUDIT.md` · `ANALISI_CONFLITTI.md` ·
+`MIGRATION_SEGMENTS.md` · `BENCHMARK_COACHPEAKING.md` · `TREDICT_INTEGRAZIONE.md`
