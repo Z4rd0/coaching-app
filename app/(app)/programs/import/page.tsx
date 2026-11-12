@@ -6,6 +6,8 @@ import { useAuth } from "@/contexts/AuthContext";
 import { createProgram } from "@/lib/firestore";
 import type { Program } from "@/types";
 import { SESSION_TYPE_LABELS } from "@/types";
+import { isMondayISODate } from "@/lib/dates";
+import { formatZodError, programImportSchema } from "@/lib/schemas/program";
 
 const DAYS = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
 
@@ -64,6 +66,7 @@ export default function ImportProgramPage() {
   const [step, setStep] = useState<Step>("upload");
   const [error, setError] = useState("");
   const [preview, setPreview] = useState<Omit<Program, "id" | "createdAt"> | null>(null);
+  const [startDate, setStartDate] = useState("");
   const [copied, setCopied] = useState(false);
 
   // PDF state
@@ -90,12 +93,14 @@ export default function ImportProgramPage() {
 
   const validateAndPreview = (parsed: unknown) => {
     setError("");
-    const p = parsed as { name?: string; cycles?: unknown[] };
-    if (!p?.name || !Array.isArray(p?.cycles)) {
-      setError('Il JSON deve avere "name" e "cycles". Scarica il template per vedere la struttura corretta.');
+    const result = programImportSchema.safeParse(parsed);
+    if (!result.success) {
+      setError(`Il JSON non è un programma valido: ${formatZodError(result.error)}`);
       return;
     }
-    setPreview({ ...(parsed as Omit<Program, "id" | "createdAt">), isActive: false });
+    const imported = result.data as Omit<Program, "id" | "createdAt">;
+    setPreview({ ...imported, isActive: false });
+    setStartDate(imported.startDate ?? "");
     setStep("preview");
   };
 
@@ -121,6 +126,7 @@ export default function ImportProgramPage() {
         return;
       }
       setPreview({ ...data.program, isActive: false });
+      setStartDate(data.program.startDate ?? "");
       setStep("preview");
     } catch {
       setError("Errore di rete");
@@ -140,9 +146,17 @@ export default function ImportProgramPage() {
 
   const handleSave = async () => {
     if (!user || !preview) return;
+    if (!startDate) {
+      setError("Scegli la data di inizio del programma");
+      return;
+    }
+    if (!isMondayISODate(startDate)) {
+      setError("La settimana 1 deve iniziare di lunedì");
+      return;
+    }
     setStep("saving");
     try {
-      const ref = await createProgram(user.uid, preview);
+      const ref = await createProgram(user.uid, { ...preview, startDate });
       router.push(`/programs/${ref.id}`);
     } catch {
       setError("Errore nel salvataggio");
@@ -303,6 +317,23 @@ export default function ImportProgramPage() {
               <span>{preview.cycles.reduce((s, c) => s + c.weeks.length, 0)} settimane</span>
               <span>{preview.cycles.reduce((s, c) => s + c.weeks.reduce((ws, w) => ws + w.sessions.length, 0), 0)} sessioni</span>
             </div>
+          </div>
+
+          <div className="bg-slate-800 rounded-2xl border border-slate-700 p-4">
+            <label htmlFor="program-start-date" className="block text-sm font-semibold text-white mb-1">
+              Data di inizio
+            </label>
+            <p className="text-xs text-slate-400 mb-3">
+              La settimana 1 deve iniziare di lunedì per comparire correttamente nel calendario.
+            </p>
+            <input
+              id="program-start-date"
+              type="date"
+              required
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="w-full bg-slate-900 border border-slate-600 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:ring-1 focus:ring-primary"
+            />
           </div>
 
           <div className="space-y-3">

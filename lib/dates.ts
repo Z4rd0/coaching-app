@@ -21,6 +21,18 @@ export function fromLocalISODate(iso: string): Date {
   return new Date(iso + "T00:00:00");
 }
 
+/** True only for a real local calendar day written as YYYY-MM-DD. */
+export function isValidLocalISODate(iso: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(iso)) return false;
+  // Date normalizes invalid values such as 2026-02-30, so round-trip it.
+  return toLocalISODate(fromLocalISODate(iso)) === iso;
+}
+
+/** Program week 1 is defined as starting on Monday. */
+export function isMondayISODate(iso: string): boolean {
+  return isValidLocalISODate(iso) && fromLocalISODate(iso).getDay() === 1;
+}
+
 /** Today as an ISO day-string in the user's timezone. */
 export function todayISO(): string {
   return toLocalISODate(new Date());

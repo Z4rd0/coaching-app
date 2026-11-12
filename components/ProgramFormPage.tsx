@@ -7,6 +7,7 @@ import { getPrograms } from "@/lib/firestore";
 import type { Cycle, Program } from "@/types";
 import type { ProgramStore, ProgramFormValues, ProgramStatus } from "@/lib/programStore";
 import { emptyCycle } from "@/lib/programHelpers";
+import { isMondayISODate } from "@/lib/dates";
 import LoadingSpinner from "@/components/LoadingSpinner";
 import ProgramBuilder from "@/components/ProgramBuilder";
 
@@ -103,6 +104,10 @@ export default function ProgramFormPage({
     if (!store) return;
     if (!name.trim()) { setError("Inserisci il nome del programma"); return; }
     if (!startDate) { setError("Scegli la data di inizio"); return; }
+    if (!isMondayISODate(startDate)) {
+      setError("La settimana 1 deve iniziare di lunedì");
+      return;
+    }
     setSaving(true);
     setError("");
     try {
@@ -119,6 +124,10 @@ export default function ProgramFormPage({
   const handleCopyTemplate = async (template: Program) => {
     if (!store?.copyTemplate) return;
     if (!startDate) { setError("Scegli la data di inizio"); return; }
+    if (!isMondayISODate(startDate)) {
+      setError("La settimana 1 deve iniziare di lunedì");
+      return;
+    }
     setSaving(true);
     setError("");
     try {

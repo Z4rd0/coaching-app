@@ -15,6 +15,8 @@ import {
   DocumentReference,
   arrayUnion,
   arrayRemove,
+  writeBatch,
+  CollectionReference,
 } from "firebase/firestore";
 import { getFirebaseDb } from "./firebase";
 import { serializeProgramForWrite } from "./segments";
@@ -59,6 +61,30 @@ function stripUndefined<T>(value: T): T {
     return out as T;
   }
   return value;
+}
+
+/**
+ * The UI and dashboard assume exactly one active program per collection.
+ *
+ * A sequence of individual updates briefly left a collection with no active
+ * program and could persist a partial result after a network failure. One batch
+ * makes the whole switch atomic; concurrent switches simply resolve to the
+ * last committed choice, never to multiple active programs.
+ */
+async function setSingleActiveProgram(
+  collectionRef: CollectionReference,
+  programId: string
+): Promise<void> {
+  const all = await getDocs(collectionRef);
+  if (!all.docs.some((d) => d.id === programId)) {
+    throw new Error("Programma non trovato");
+  }
+
+  const batch = writeBatch(db());
+  all.docs.forEach((d) => {
+    batch.update(d.ref, { isActive: d.id === programId });
+  });
+  await batch.commit();
 }
 
 // ─── Paths ────────────────────────────────────────────────────────────────────
@@ -342,9 +368,7 @@ export async function setActiveAthleteProgram(
   athleteId: string,
   programId: string
 ): Promise<void> {
-  const all = await getDocs(athleteProgramsRef(coachId, athleteId));
-  await Promise.all(all.docs.map((d) => updateDoc(d.ref, { isActive: false })));
-  await updateDoc(athleteProgramRef(coachId, athleteId, programId), { isActive: true });
+  await setSingleActiveProgram(athleteProgramsRef(coachId, athleteId), programId);
 }
 
 export async function getActiveAthleteProgram(
@@ -496,9 +520,7 @@ export async function setActiveGroupProgram(
   groupId: string,
   programId: string
 ): Promise<void> {
-  const all = await getDocs(groupProgramsRef(coachId, groupId));
-  await Promise.all(all.docs.map((d) => updateDoc(d.ref, { isActive: false })));
-  await updateDoc(groupProgramRef(coachId, groupId, programId), { isActive: true });
+  await setSingleActiveProgram(groupProgramsRef(coachId, groupId), programId);
 }
 
 export async function getActiveGroupProgram(
@@ -567,9 +589,7 @@ export async function setActiveProgram(
   coachId: string,
   programId: string
 ): Promise<void> {
-  const all = await getDocs(programsRef(coachId));
-  await Promise.all(all.docs.map((d) => updateDoc(d.ref, { isActive: false })));
-  await updateDoc(programRef(coachId, programId), { isActive: true });
+  await setSingleActiveProgram(programsRef(coachId), programId);
 }
 
 export async function getActiveProgram(coachId: string): Promise<Program | null> {

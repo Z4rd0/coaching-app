@@ -151,9 +151,10 @@ function LogPageInner() {
   }, [logDate]);
 
   // Rest timer countdown
+  const activeTimerRemaining = activeTimer?.remaining;
   useEffect(() => {
-    if (!activeTimer) return;
-    if (activeTimer.remaining <= 0) {
+    if (activeTimerRemaining == null) return;
+    if (activeTimerRemaining <= 0) {
       if (typeof navigator !== "undefined" && navigator.vibrate) navigator.vibrate([200, 100, 200]);
       const t = setTimeout(() => setActiveTimer(null), 3000);
       return () => clearTimeout(t);
@@ -162,7 +163,7 @@ function LogPageInner() {
       setActiveTimer((prev) => prev ? { ...prev, remaining: prev.remaining - 1 } : null);
     }, 1000);
     return () => clearInterval(interval);
-  }, [activeTimer?.remaining]);
+  }, [activeTimerRemaining]);
 
   const startTimer = (seconds: number, label: string) =>
     setActiveTimer({ label, remaining: seconds, total: seconds });

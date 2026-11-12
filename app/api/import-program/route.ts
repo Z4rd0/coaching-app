@@ -1,29 +1,121 @@
 import { NextRequest, NextResponse } from "next/server";
 import Anthropic from "@anthropic-ai/sdk";
+import { Timestamp } from "firebase-admin/firestore";
 import { verifyRequestAuth } from "@/lib/server-auth";
+import { getAdminDb } from "@/lib/firebase-admin";
 import { programImportSchema, formatZodError } from "@/lib/schemas/program";
 
-const client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+/** Override with IMPORT_MODEL in the environment when the model is retired or upgraded. */
+const IMPORT_MODEL = process.env.IMPORT_MODEL ?? "claude-sonnet-5-5";
+const MAX_PDF_BYTES = 10 * 1024 * 1024;
+const MAX_TEXT_CHARS = 50_000;
+const IMPORT_WINDOW_MS = 15 * 60 * 1000;
+const MAX_IMPORTS_PER_WINDOW = 5;
+
+function getAnthropicClient(): Anthropic | null {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  return apiKey ? new Anthropic({ apiKey }) : null;
+}
+
+/** PDFs may include arbitrary leading bytes; their header must appear in the first 1 KB. */
+function hasPdfHeader(bytes: Uint8Array): boolean {
+  return Buffer.from(bytes.subarray(0, 1024)).includes(Buffer.from("%PDF-"));
+}
+
+/**
+ * Global (not instance-local) rate limit backed by Firestore. The import route
+ * spends external API credits, so an in-memory limiter would not be sufficient
+ * on a serverless deployment with multiple instances.
+ */
+async function consumeImportSlot(coachId: string): Promise<number | null> {
+  const db = getAdminDb();
+  const ref = db.doc(`importUsage/${coachId}`);
+  const now = Timestamp.now();
+
+  return db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    const data = snap.data();
+    const windowStartedAt = data?.windowStartedAt as Timestamp | undefined;
+    const count = typeof data?.count === "number" ? data.count : 0;
+    const elapsed = windowStartedAt ? now.toMillis() - windowStartedAt.toMillis() : Infinity;
+
+    if (elapsed < IMPORT_WINDOW_MS && count >= MAX_IMPORTS_PER_WINDOW) {
+      return Math.max(1, Math.ceil((IMPORT_WINDOW_MS - elapsed) / 1000));
+    }
+
+    if (elapsed < IMPORT_WINDOW_MS) {
+      tx.update(ref, { count: count + 1, lastAttemptAt: now });
+    } else {
+      tx.set(ref, { windowStartedAt: now, count: 1, lastAttemptAt: now });
+    }
+    return null;
+  });
+}
 
 export async function POST(req: NextRequest) {
   try {
-    // Authenticated users only — this endpoint spends Anthropic credits
+    // Only real coaches may use an endpoint that spends Anthropic credits.
     const caller = await verifyRequestAuth(req);
     if (!caller) {
       return NextResponse.json({ error: "Non autorizzato" }, { status: 401 });
     }
+    const db = getAdminDb();
+    const coach = await db.doc(`coaches/${caller.uid}`).get();
+    if (!coach.exists) {
+      return NextResponse.json({ error: "Funzione riservata ai coach" }, { status: 403 });
+    }
 
     const formData = await req.formData();
-    const file = formData.get("file") as File | null;
-    const textContent = formData.get("text") as string | null;
+    const file = formData.get("file");
+    const textContent = formData.get("text");
 
-    if (file) {
+    if (file && typeof file !== "string") {
+      if (file.size === 0) {
+        return NextResponse.json({ error: "Il PDF è vuoto" }, { status: 400 });
+      }
+      if (file.size > MAX_PDF_BYTES) {
+        return NextResponse.json(
+          { error: "Il PDF supera la dimensione massima di 10 MB" },
+          { status: 413 }
+        );
+      }
+    } else if (typeof textContent === "string") {
+      if (!textContent.trim()) {
+        return NextResponse.json({ error: "Nessun contenuto fornito" }, { status: 400 });
+      }
+      if (textContent.length > MAX_TEXT_CHARS) {
+        return NextResponse.json(
+          { error: "Il testo supera il limite di 50.000 caratteri" },
+          { status: 413 }
+        );
+      }
+    } else {
+      return NextResponse.json({ error: "Nessun contenuto fornito" }, { status: 400 });
+    }
+
+    const retryAfter = await consumeImportSlot(caller.uid);
+    if (retryAfter) {
+      return NextResponse.json(
+        { error: "Hai raggiunto il limite di importazioni. Riprova tra qualche minuto." },
+        { status: 429, headers: { "Retry-After": String(retryAfter) } }
+      );
+    }
+
+    const client = getAnthropicClient();
+    if (!client) {
+      return NextResponse.json({ error: "Import AI non configurato" }, { status: 503 });
+    }
+
+    if (file && typeof file !== "string") {
       const arrayBuffer = await file.arrayBuffer();
+      if (!hasPdfHeader(new Uint8Array(arrayBuffer))) {
+        return NextResponse.json({ error: "Il file caricato non è un PDF valido" }, { status: 415 });
+      }
       const base64 = Buffer.from(arrayBuffer).toString("base64");
 
-      // PDF via document block (requires claude-sonnet-4-5 or later)
+      // PDF via document block (needs a model with PDF support)
       const message = await client.messages.create({
-        model: "claude-sonnet-4-5",
+        model: IMPORT_MODEL,
         max_tokens: 4096,
         messages: [
           {
@@ -48,9 +140,9 @@ export async function POST(req: NextRequest) {
 
       return parseAndReturn(message);
 
-    } else if (textContent) {
+    } else if (typeof textContent === "string") {
       const message = await client.messages.create({
-        model: "claude-sonnet-4-5",
+        model: IMPORT_MODEL,
         max_tokens: 4096,
         messages: [
           {
@@ -61,15 +153,12 @@ export async function POST(req: NextRequest) {
       });
 
       return parseAndReturn(message);
-
-    } else {
-      return NextResponse.json({ error: "Nessun contenuto fornito" }, { status: 400 });
     }
 
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : String(error);
     console.error("Import program error:", message);
-    return NextResponse.json({ error: message }, { status: 500 });
+    return NextResponse.json({ error: "Errore durante l'importazione. Riprova." }, { status: 500 });
   }
 }
 
