@@ -86,7 +86,13 @@ service cloud.firestore {
         // Workout logs (shared between coach and athlete)
         match /logs/{logId} {
           allow read, write: if isCoach(coachId);
-          allow read, write: if isAthlete(coachId, athleteId);
+          // The athlete may read and create logs, but never write the coach's
+          // feedback. Edits and deletes by the athlete go through
+          // /api/update-log and /api/delete-log (Admin SDK, whitelisted fields),
+          // so no client-side update/delete is granted here.
+          allow read: if isAthlete(coachId, athleteId);
+          allow create: if isAthlete(coachId, athleteId)
+            && !("coachComment" in request.resource.data);
         }
 
         // Catch-all for any other athlete-owned subcollections

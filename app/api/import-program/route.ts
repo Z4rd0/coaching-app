@@ -5,6 +5,8 @@ import { verifyRequestAuth } from "@/lib/server-auth";
 import { getAdminDb } from "@/lib/firebase-admin";
 import { programImportSchema, formatZodError } from "@/lib/schemas/program";
 
+/** Override with IMPORT_MODEL in the environment when the model is retired or upgraded. */
+const IMPORT_MODEL = process.env.IMPORT_MODEL ?? "claude-sonnet-5-5";
 const MAX_PDF_BYTES = 10 * 1024 * 1024;
 const MAX_TEXT_CHARS = 50_000;
 const IMPORT_WINDOW_MS = 15 * 60 * 1000;
@@ -111,9 +113,9 @@ export async function POST(req: NextRequest) {
       }
       const base64 = Buffer.from(arrayBuffer).toString("base64");
 
-      // PDF via document block (requires claude-sonnet-4-5 or later)
+      // PDF via document block (needs a model with PDF support)
       const message = await client.messages.create({
-        model: "claude-sonnet-4-5",
+        model: IMPORT_MODEL,
         max_tokens: 4096,
         messages: [
           {
@@ -140,7 +142,7 @@ export async function POST(req: NextRequest) {
 
     } else if (typeof textContent === "string") {
       const message = await client.messages.create({
-        model: "claude-sonnet-4-5",
+        model: IMPORT_MODEL,
         max_tokens: 4096,
         messages: [
           {
