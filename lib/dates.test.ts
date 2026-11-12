@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { toLocalISODate, fromLocalISODate, todayISO } from "@/lib/dates";
+import {
+  toLocalISODate,
+  fromLocalISODate,
+  todayISO,
+  isValidLocalISODate,
+  isMondayISODate,
+} from "@/lib/dates";
 
 describe("toLocalISODate", () => {
   it("names the local calendar day, not the UTC one", () => {
@@ -34,5 +40,19 @@ describe("fromLocalISODate", () => {
 describe("todayISO", () => {
   it("matches the local components of now", () => {
     expect(todayISO()).toBe(toLocalISODate(new Date()));
+  });
+});
+
+describe("program start dates", () => {
+  it("accepts only real ISO calendar days", () => {
+    expect(isValidLocalISODate("2026-02-28")).toBe(true);
+    expect(isValidLocalISODate("2026-02-30")).toBe(false);
+    expect(isValidLocalISODate("26-02-28")).toBe(false);
+  });
+
+  it("requires Monday as the anchor of program week 1", () => {
+    expect(isMondayISODate("2026-01-05")).toBe(true);
+    expect(isMondayISODate("2026-01-07")).toBe(false);
+    expect(isMondayISODate("2026-02-30")).toBe(false);
   });
 });
